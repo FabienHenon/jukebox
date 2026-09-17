@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Chromium kiosk launcher for the Jukebox display.
+#
+# Install as /usr/local/bin/jukebox-kiosk (chmod +x) and start it from the
+# desktop session of the auto-logged-in user, for example with a systemd
+# *user* unit (below) or ~/.config/autostart/jukebox-kiosk.desktop.
+# It loops forever: if Chromium exits or crashes it is relaunched after a
+# short pause. Phoenix (jukebox.service) and Shairport Sync are independent
+# system services; this script must never be a dependency of either.
+#
+# ---- systemd user unit: ~/.config/systemd/user/jukebox-kiosk.service ----
+# [Unit]
+# Description=Jukebox Chromium kiosk
+# After=graphical-session.target
+# PartOf=graphical-session.target
+# [Service]
+# ExecStart=/usr/local/bin/jukebox-kiosk
+# Restart=always
+# RestartSec=2
+# [Install]
+# WantedBy=graphical-session.target
+# (enable with: systemctl --user enable --now jukebox-kiosk)
+#
+# ---- .desktop autostart alternative: ~/.config/autostart/jukebox-kiosk.desktop ----
+# [Desktop Entry]
+# Type=Application
+# Name=Jukebox kiosk
+# Exec=/usr/local/bin/jukebox-kiosk
+# X-GNOME-Autostart-enabled=true
+
+set -u
+
+URL="${JUKEBOX_URL:-http://127.0.0.1:4000/}"
+PROFILE="${JUKEBOX_CHROMIUM_PROFILE:-/tmp/jukebox-chromium}"
+
+# Screen sleep / blanking off (X11). On Wayland/labwc set this in the
+# compositor configuration instead (see docs/raspberry-pi.md).
+if command -v xset >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
+  xset s off
+  xset s noblank
+  xset -dpms
+fi
+
+# Hide the mouse cursor at the OS level as a second line of defence (the page
+# also hides it with CSS in production). `unclutter` is optional.
+if command -v unclutter >/dev/null 2>&1 && [ -n "${DISPLAY:-}" ]; then
+  unclutter -idle 0.5 -root &
+fi
+
+# Wait for Phoenix to answer before opening Chromium so the first paint is the
+# jukebox startup screen, not a browser error page.
+for _ in $(seq 1 60); do
+  if curl -fsS -o /dev/null "$URL"; then break; fi
+  sleep 1
+done
+
+while true; do
+  # Clear the "Chromium didn't shut down correctly" state so the restore
+  # bubble never appears on the kiosk.
+  mkdir -p "$PROFILE/Default"
+  if [ -f "$PROFILE/Default/Preferences" ]; then
+    sed -i 's/"exited_cleanly":false/"exited_cleanly":true/; s/"exit_type":"Crashed"/"exit_type":"Normal"/' \
+      "$PROFILE/Default/Preferences"
+  fi
+
+  chromium-browser \
+    --kiosk "$URL" \
+    --user-data-dir="$PROFILE" \
+    --noerrdialogs \
+    --disable-infobars \
+    --disable-session-crashed-bubble \
+    --disable-translate \
+    --disable-features=TranslateUI \
+    --no-first-run \
+    --overscroll-history-navigation=0 \
+    --disable-pinch \
+    --check-for-update-interval=31536000 \
+    --autoplay-policy=no-user-gesture-required \
+    --enable-features=OverlayScrollbar \
+    --start-fullscreen \
+    --window-position=0,0
+
+  # Chromium exited (crash, OOM, manual close): relaunch after a short pause.
+  sleep 2
+done

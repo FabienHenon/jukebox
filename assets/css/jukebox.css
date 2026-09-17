@@ -1,0 +1,1175 @@
+/* ==========================================================================
+   Jukebox kiosk display
+   A pastel-pink 1950s jukebox, interpreted as a soft contemporary illustration.
+   Pure CSS: gradients, a handful of pseudo-elements, opacity/transform
+   animations only. Sized with clamp(), viewport units and container units so
+   it works at 1920x1080, 1280x720 and 1024x600 without scrolling.
+   ========================================================================== */
+
+/* Self-hosted display face for the wordmark (Pacifico, SIL Open Font License,
+   see priv/static/fonts/pacifico-OFL.txt). Nothing is fetched from the network. */
+@font-face {
+  font-family: "Pacifico";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/pacifico.woff2") format("woff2");
+}
+
+:root {
+  --aubergine: #30233d;
+  --pink: #f3a6c4;
+  --pink-deep: #e997ba;
+  --pink-light: #f8c3d8;
+  --rose: #e967a1;
+  --rose-text: #c6407d;
+  --cream: #fff5df;
+  --lemon: #f7d96f;
+  --lemon-light: #fbe7a0;
+  --lemon-dark: #d9bd5c;
+  --sky: #93d5f4;
+  --sky-light: #b7e3f8;
+  --sky-dark: #7cb8d6;
+  --mint: #a7e3c3;
+  --mint-light: #c5edd7;
+  --mint-dark: #8fc5a9;
+  --warm-white: #fffdf7;
+  --chrome: #e7dde2;
+  --chrome-dark: #c9b8c2;
+  --text: var(--aubergine);
+  --text-soft: #6b5a78;
+
+  --font-display: "Arial Rounded MT Bold", "Nunito", "Quicksand", "Varela Round", ui-rounded,
+    "SF Pro Rounded", "Hiragino Maru Gothic ProN", system-ui, sans-serif;
+  --font-sign: "Pacifico", "Brush Script MT", "Snell Roundhand", "Segoe Script", cursive;
+  --font-body: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", "Hiragino Maru Gothic ProN",
+    "Segoe UI", system-ui, sans-serif;
+
+  --pad: clamp(8px, 1.4vmin, 18px);
+  --gap: clamp(6px, 1.2vmin, 14px);
+  --pillar: clamp(34px, 5vw, 84px);
+  --marquee: clamp(64px, 11.5vh, 128px);
+  --base: clamp(38px, 6.5vh, 66px);
+  --screen-pad: clamp(14px, 2.4vmin, 34px);
+  --radius-body: clamp(30px, 7vmin, 92px);
+  /* Painted sign: size and how far it hangs into the screen window. The
+     content area is inset by the overhang so nothing hides behind the sign. */
+  /* Height-driven, but capped by width so 4:3 screens keep the sign inside the frame. */
+  --sign-size: min(clamp(150px, 34vh, 380px), 22vw);
+  /* Screen glow tinted by the artwork: the hook sets --glow-h / --glow-s /
+     --glow-a; lightness and the saturation bounds live here so contrast stays
+     safe (aubergine text keeps > 10:1, soft text > 4.5:1 at this lightness). */
+  --glow-l: 91%;
+  --glow-s-min: 35%;
+  --glow-s-max: 60%;
+  --sign-top: calc(var(--sign-size) * -0.14);
+  --sign-overhang: max(0px, calc(var(--sign-size) * 1.16 - var(--marquee) - var(--gap) - var(--pad)));
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@media (max-height: 640px) {
+  :root {
+    --pad: 8px;
+    --gap: 6px;
+    --marquee: 62px;
+    --base: 36px;
+    --screen-pad: 12px;
+  }
+}
+
+@media (max-aspect-ratio: 3 / 2) {
+  :root {
+    --pillar: clamp(24px, 3.5vw, 60px);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Appliance root: full viewport, no scrolling, no selection, no cursor (prod)
+   -------------------------------------------------------------------------- */
+
+html.kiosk,
+html.kiosk body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: linear-gradient(180deg, #f6dee4 0%, #efcfdd 100%);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.kiosk ::selection {
+  background: transparent;
+}
+
+body.kiosk--no-cursor,
+body.kiosk--no-cursor * {
+  cursor: none !important;
+}
+
+.jukebox {
+  position: fixed;
+  inset: 0;
+  padding: var(--pad);
+  display: grid;
+}
+
+/* --------------------------------------------------------------------------
+   The jukebox body (pink shell with chrome trim)
+   -------------------------------------------------------------------------- */
+
+.jb-body {
+  position: relative;
+  box-sizing: border-box;
+  height: 100%;
+  width: 100%;
+  display: grid;
+  grid-template-columns: var(--pillar) minmax(0, 1fr) var(--pillar);
+  grid-template-rows: var(--marquee) minmax(0, 1fr) var(--base);
+  gap: var(--gap);
+  padding: var(--pad);
+  border-radius: var(--radius-body) var(--radius-body) calc(var(--radius-body) * 0.4)
+    calc(var(--radius-body) * 0.4);
+  background: radial-gradient(120% 80% at 50% -10%, var(--pink-light) 0%, var(--pink) 48%, var(--pink-deep) 100%);
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 253, 247, 0.7),
+    inset 0 0 0 7px var(--chrome-dark),
+    inset 0 0 0 9px rgba(255, 255, 255, 0.35),
+    0 24px 60px -30px rgba(48, 35, 61, 0.55);
+  animation: frame-in 0.7s var(--ease) both;
+}
+
+/* Marquee ------------------------------------------------------------------ */
+
+.jb-marquee {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr minmax(34vw, auto) 1fr;
+  align-items: center;
+  gap: var(--gap);
+  padding: 0 clamp(8px, 2vw, 28px);
+}
+
+/* The sign sits above the frame and is allowed to hang over the top edge of
+   the screen window, like a painted sign bolted onto the machine. */
+.jb-wordmark {
+  position: absolute;
+  top: var(--sign-top);
+  left: 50%;
+  z-index: 6;
+  margin: 0;
+  font-family: var(--font-sign);
+  font-weight: 400;
+  font-size: var(--sign-size);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  padding: 0 0.25em;
+  color: var(--lemon);
+  white-space: nowrap;
+  pointer-events: none;
+  /* Painted-sign look: a hard rose offset, an aubergine outline and a soft glow. */
+  text-shadow:
+    0.03em 0.045em 0 var(--rose-text),
+    -1px -1px 0 rgba(48, 35, 61, 0.35),
+    0 0 0.25em rgba(255, 253, 247, 0.6);
+  transform: translateX(-50%) rotate(-3deg);
+  transform-origin: center;
+}
+
+/* Letters wave one after the other: a small vertical bob so the connected
+   script stays legible. */
+.jb-wordmark__letter {
+  display: inline-block;
+  animation: letter-wave 2.8s ease-in-out infinite;
+  animation-delay: calc(var(--i) * -0.24s);
+}
+
+/* Playing: the letters hold still and a light reflection sweeps through
+   them every few seconds. The overlay repeats the text clipped to a moving
+   gradient; the sweep lasts ~2 s of a 6 s cycle so repaints stay occasional. */
+.jb-wordmark__text {
+  position: relative;
+  display: inline-block;
+}
+
+.jb-wordmark__text::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: transparent;
+  text-shadow: none;
+  pointer-events: none;
+  background-image: linear-gradient(
+    105deg,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0.95) 50%,
+    rgba(255, 255, 255, 0) 60%
+  );
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  background-position: 100% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: sign-shine 6s ease-in-out infinite;
+}
+
+@keyframes sign-shine {
+  0% {
+    background-position: 100% 0;
+  }
+  34% {
+    background-position: 0% 0;
+  }
+  100% {
+    background-position: 0% 0;
+  }
+}
+
+@keyframes letter-wave {
+  0%,
+  100% {
+    transform: translateY(0.035em);
+  }
+  50% {
+    transform: translateY(-0.035em);
+  }
+}
+
+.jb-lights {
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+}
+
+/* The sign is absolutely positioned, so pin the bulb rows to the outer
+   columns explicitly; the middle column stays clear under the sign. */
+.jb-marquee > .jb-lights:first-of-type {
+  grid-column: 1;
+}
+
+.jb-marquee > .jb-lights:last-of-type {
+  grid-column: 3;
+}
+
+.bulb {
+  --c: var(--lemon);
+  width: clamp(9px, 1.4vh, 16px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.6),
+    0 0 12px var(--c);
+  opacity: 0.55;
+  animation: twinkle 3.6s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.3s);
+}
+
+.bulb[data-color="sky"],
+.jb-seg[data-color="sky"] {
+  --c: var(--sky);
+  --c-light: var(--sky-light);
+  --c-dark: var(--sky-dark);
+}
+
+.bulb[data-color="mint"],
+.jb-seg[data-color="mint"] {
+  --c: var(--mint);
+  --c-light: var(--mint-light);
+  --c-dark: var(--mint-dark);
+}
+
+.bulb[data-color="rose"] {
+  --c: var(--rose);
+}
+
+/* Pillars ------------------------------------------------------------------ */
+
+.jb-pillar {
+  display: grid;
+  grid-template-rows: repeat(3, 1fr);
+  gap: var(--gap);
+}
+
+.jb-seg {
+  --c: var(--lemon);
+  --c-light: var(--lemon-light);
+  --c-dark: var(--lemon-dark);
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--c-light) 0%, var(--c) 50%, var(--c-dark) 100%);
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 255, 255, 0.45),
+    inset 0 -6px 12px rgba(48, 35, 61, 0.12);
+}
+
+.jb-lamp {
+  width: 46%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #ffffff 0%, var(--c) 45%, var(--c-dark) 100%);
+  box-shadow: 0 0 14px var(--c);
+  animation: breathe 4.8s ease-in-out infinite;
+}
+
+.jb-pillar--right .jb-lamp {
+  animation-delay: -2.4s;
+}
+
+/* Screen window --------------------------------------------------------------- */
+
+.jb-screen {
+  position: relative;
+  container-type: size;
+  border-radius: clamp(18px, 3vmin, 34px);
+  background: radial-gradient(90% 70% at 50% 30%, var(--warm-white) 0%, var(--cream) 70%, #f9e9d2 100%);
+  box-shadow:
+    inset 0 0 0 3px #fff,
+    inset 0 0 0 6px var(--chrome-dark),
+    inset 0 10px 30px rgba(48, 35, 61, 0.1);
+  overflow: hidden;
+}
+
+/* Soft radial glow behind the artwork, only while a track is showing. The
+   gradient is a static mask; only background-color and opacity transition. */
+.jb-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-color: hsl(
+    var(--glow-h, 0) clamp(var(--glow-s-min), var(--glow-s, 0%), var(--glow-s-max)) var(--glow-l) /
+      var(--glow-a, 0)
+  );
+  -webkit-mask-image: radial-gradient(75% 95% at 30% 58%, #000 0%, rgba(0, 0, 0, 0.6) 40%, transparent 82%);
+  mask-image: radial-gradient(75% 95% at 30% 58%, #000 0%, rgba(0, 0, 0, 0.6) 40%, transparent 82%);
+  opacity: 0;
+  transition:
+    background-color 0.6s var(--ease),
+    opacity 0.6s var(--ease);
+}
+
+.jukebox[data-mode="now_playing"] .jb-screen::before {
+  opacity: 1;
+}
+
+.screen {
+  position: absolute;
+  inset: calc(var(--screen-pad) + var(--sign-overhang)) var(--screen-pad) var(--screen-pad);
+  animation: screen-in 0.42s var(--ease) both;
+}
+
+.screen-leave {
+  transition:
+    opacity 0.32s var(--ease),
+    transform 0.32s var(--ease);
+}
+
+.screen-leave-end {
+  opacity: 0;
+  transform: translateY(8px) scale(0.985);
+}
+
+/* Base ------------------------------------------------------------------------- */
+
+.jb-base {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--gap);
+  padding: 0 clamp(6px, 1.4vw, 20px);
+}
+
+.jb-grille {
+  height: 60%;
+  border-radius: 999px;
+  background: repeating-linear-gradient(90deg, var(--aubergine) 0 3px, transparent 3px 9px);
+  opacity: 0.28;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+}
+
+.jb-statusline {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  max-width: 60vw;
+  font-size: clamp(13px, 2vh, 20px);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--aubergine);
+  background: rgba(255, 253, 247, 0.75);
+  padding: 0.35em 1.1em;
+  border-radius: 999px;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.7),
+    0 2px 0 rgba(48, 35, 61, 0.12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jb-statusline__dot {
+  flex: none;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  background: var(--rose);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+/* Startup overlay ------------------------------------------------------------ */
+
+.jb-boot {
+  position: absolute;
+  inset: var(--pad);
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-body) var(--radius-body) calc(var(--radius-body) * 0.4)
+    calc(var(--radius-body) * 0.4);
+  background: radial-gradient(120% 80% at 50% -10%, var(--pink-light) 0%, var(--pink) 48%, var(--pink-deep) 100%);
+  box-shadow:
+    inset 0 0 0 3px rgba(255, 253, 247, 0.7),
+    inset 0 0 0 7px var(--chrome-dark);
+  transition:
+    opacity 0.55s var(--ease),
+    visibility 0s linear 0.55s;
+}
+
+.jb-boot.is-done {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.jb-boot__inner {
+  display: grid;
+  justify-items: center;
+  gap: clamp(10px, 2.4vh, 24px);
+}
+
+.jb-boot .jb-lights {
+  gap: clamp(8px, 1.4vw, 18px);
+}
+
+.jb-boot .bulb {
+  animation: boot-light 1.6s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 0.12s);
+}
+
+.jb-wordmark--boot {
+  position: static;
+  font-size: calc(var(--sign-size) * 0.8);
+  transform: rotate(-3deg);
+  animation: sign-in 0.8s var(--ease) both;
+}
+
+.jb-boot__line {
+  margin: 0;
+  font-size: clamp(15px, 2.4vh, 24px);
+  font-weight: 600;
+  color: var(--aubergine);
+  opacity: 0.8;
+}
+
+/* Display-connection hint (LiveView socket) -------------------------------- */
+
+/* Shown by LiveView's phx-disconnected; the delayed fade-in keeps a brief
+   reconnect (a Phoenix restart takes well under two seconds) from flashing. */
+.jb-offline {
+  position: fixed;
+  bottom: calc(var(--pad) + var(--base) + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 0.35em 1em;
+  border-radius: 999px;
+  background: rgba(48, 35, 61, 0.8);
+  color: var(--warm-white);
+  font-size: clamp(12px, 1.8vh, 18px);
+  font-weight: 600;
+  pointer-events: none;
+  animation: offline-in 0.3s var(--ease) 2.5s both;
+}
+
+@keyframes offline-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Idle screen
+   -------------------------------------------------------------------------- */
+
+.idle {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  justify-items: center;
+  align-content: center;
+  gap: clamp(10px, 3cqh, 28px);
+  text-align: center;
+}
+
+.idle__stage {
+  position: relative;
+  height: min(calc((100cqh - var(--sign-overhang) - 2 * var(--screen-pad)) * 0.55), 36cqw);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+
+.idle__record {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  box-shadow: 0 16px 30px -10px rgba(48, 35, 61, 0.35);
+}
+
+.record {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: spin 16s linear infinite;
+}
+
+.idle__note {
+  position: absolute;
+  font-size: clamp(22px, 4.5cqh, 48px);
+  font-weight: 700;
+  line-height: 1;
+  animation: float 5s ease-in-out infinite;
+}
+
+.idle__note--1 {
+  left: -18%;
+  top: 16%;
+  color: var(--rose);
+}
+
+.idle__note--2 {
+  right: -20%;
+  top: 8%;
+  color: #5fb7e0;
+  animation-delay: -1.6s;
+}
+
+.idle__note--3 {
+  right: -12%;
+  bottom: 12%;
+  color: #63b98c;
+  animation-delay: -3.2s;
+}
+
+.idle__heading,
+.connecting__heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(28px, 7cqh, 64px);
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: var(--aubergine);
+}
+
+.idle__instruction {
+  margin: 0;
+  max-width: 72cqw;
+  font-size: clamp(16px, 3.4cqh, 28px);
+  line-height: 1.35;
+  color: var(--text-soft);
+  text-wrap: balance;
+}
+
+/* --------------------------------------------------------------------------
+   Connecting screen
+   -------------------------------------------------------------------------- */
+
+.connecting {
+  height: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(20px, 4cqw, 60px);
+}
+
+.connecting__art {
+  --art: min(calc(100cqh - 2 * var(--screen-pad) - var(--sign-overhang)), 36cqw, 520px);
+  width: var(--art);
+  aspect-ratio: 1;
+  border-radius: 6%;
+  overflow: hidden;
+  background: var(--warm-white);
+  box-shadow:
+    0 0 0 4px #fff,
+    0 18px 40px -22px rgba(48, 35, 61, 0.5);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+.connecting__art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.connecting__text {
+  min-width: 0;
+  display: grid;
+  gap: clamp(8px, 2cqh, 18px);
+}
+
+.connecting__source {
+  margin: 0;
+  font-size: clamp(16px, 3.2cqh, 28px);
+  color: var(--text-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connecting__skeleton {
+  display: grid;
+  gap: clamp(8px, 1.6cqh, 14px);
+  margin-top: clamp(4px, 1cqh, 10px);
+}
+
+.connecting__skeleton i {
+  display: block;
+  height: clamp(12px, 2.4cqh, 22px);
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--pink-light), #f9d9e6);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+
+.connecting__skeleton i:first-child {
+  width: 58%;
+}
+
+.connecting__skeleton i:last-child {
+  width: 38%;
+  animation-delay: -0.6s;
+}
+
+/* --------------------------------------------------------------------------
+   Now Playing screen
+   -------------------------------------------------------------------------- */
+
+.np {
+  height: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(18px, 3.6cqw, 64px);
+}
+
+.np__art-slot {
+  --art: min(calc(100cqh - 2 * var(--screen-pad) - var(--sign-overhang)), 42cqw, 660px);
+  position: relative;
+  isolation: isolate;
+  width: var(--art);
+  height: var(--art);
+}
+
+/* Layered pastel plates behind the artwork */
+/* --plate-a / --plate-b / --accent are set per artwork by the ArtworkPalette
+   hook (pastel-adjusted colours sampled from the cover); the defaults keep the
+   base palette when no artwork or no usable colour is available. */
+.np__art-slot::before,
+.np__art-slot::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 7%;
+  transition:
+    opacity 0.4s var(--ease),
+    background-color 0.6s var(--ease);
+}
+
+.np__art-slot::before {
+  inset: 4% -3% -4% 3%;
+  background-color: var(--plate-a, var(--lemon));
+  transform: rotate(-3deg);
+}
+
+.np__art-slot::after {
+  inset: -3% 4% 3% -4%;
+  background-color: var(--plate-b, var(--sky));
+  transform: rotate(2.5deg);
+}
+
+.np__art {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  border-radius: 6%;
+  overflow: hidden;
+  background: var(--warm-white);
+  box-shadow:
+    0 0 0 4px #fff,
+    0 24px 44px -26px rgba(48, 35, 61, 0.55);
+  animation: art-in 0.46s var(--ease) both;
+}
+
+.np__art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.art-leave {
+  transition:
+    opacity 0.28s var(--ease),
+    transform 0.28s var(--ease);
+}
+
+.art-leave-end {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+.np__meta-slot {
+  position: relative;
+  min-width: 0;
+  display: grid;
+}
+
+.np__meta {
+  grid-area: 1 / 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(6px, 1.6cqh, 18px);
+  animation: meta-in 0.4s var(--ease) both;
+}
+
+.meta-leave {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.24s var(--ease),
+    transform 0.24s var(--ease);
+}
+
+.meta-leave-end {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.np__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(26px, 4.4cqw, 68px);
+  line-height: 1.08;
+  color: var(--aubergine);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.np__artist {
+  margin: 0;
+  font-size: clamp(18px, 2.5cqw, 36px);
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--rose-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.np__album {
+  margin: 0;
+  font-size: clamp(15px, 1.8cqw, 26px);
+  font-weight: 600;
+  color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.np__progress {
+  margin-top: clamp(4px, 1cqh, 10px);
+}
+
+.np__progress-live {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 6px;
+}
+
+.np__bar {
+  grid-column: 1 / -1;
+  height: clamp(8px, 1.4cqh, 14px);
+  border-radius: 999px;
+  background: rgba(48, 35, 61, 0.12);
+  box-shadow: inset 0 1px 2px rgba(48, 35, 61, 0.15);
+  overflow: hidden;
+}
+
+.np__bar-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent, var(--rose)), var(--accent-soft, #f08bb6));
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: opacity 0.3s var(--ease);
+}
+
+.np__time {
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(14px, 1.7cqw, 24px);
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.np__time--total {
+  text-align: right;
+}
+
+.np__status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  font-size: clamp(13px, 1.5cqw, 20px);
+  font-weight: 700;
+  padding: 0.3em 0.9em 0.3em 0.7em;
+  border-radius: 999px;
+  background: var(--mint);
+  color: var(--aubergine);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+
+.pill[data-kind="paused"] {
+  background: var(--lemon);
+}
+
+.pill[data-kind="stopped"],
+.pill[data-kind="ending"] {
+  background: var(--chrome);
+}
+
+.glyph {
+  width: 1.05em;
+  height: 1.05em;
+  fill: currentColor;
+}
+
+.np__volume {
+  font-size: clamp(13px, 1.5cqw, 20px);
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+/* Decorative waves: three pastel stroked lines scrolling at different speeds
+   (transform only). Amplitude follows --wave-level (volume); the animation is
+   paused while paused/stopped/ending. Not an audio visualiser. */
+.np__waves {
+  --wave-level: 1;
+  position: relative;
+  height: clamp(34px, 10cqh, 80px);
+  margin-top: clamp(4px, 1.2cqh, 12px);
+  overflow: hidden;
+  transform: scaleY(var(--wave-level));
+  transform-origin: center center;
+  transition: opacity 0.4s var(--ease);
+}
+
+.np__wave {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 200%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  animation: wave-scroll linear infinite;
+}
+
+.np__wave path {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.np__wave--1 {
+  animation-duration: 9s;
+}
+
+.np__wave--1 path {
+  stroke: var(--accent, var(--rose));
+  opacity: 0.85;
+}
+
+.np__wave--2 {
+  animation-duration: 13s;
+  animation-delay: -5s;
+}
+
+.np__wave--2 path {
+  stroke: var(--plate-b, var(--sky));
+  opacity: 0.9;
+}
+
+.np__wave--3 {
+  animation-duration: 6.5s;
+  animation-delay: -2s;
+}
+
+.np__wave--3 path {
+  stroke: var(--plate-a, var(--lemon));
+  opacity: 0.9;
+}
+
+.jukebox[data-playback="paused"] .np__wave,
+.jukebox[data-playback="stopped"] .np__wave,
+.jukebox[data-playback="unknown"] .np__wave {
+  animation-play-state: paused;
+}
+
+.jukebox[data-playback="paused"] .np__waves,
+.jukebox[data-playback="stopped"] .np__waves {
+  opacity: 0.45;
+}
+
+@keyframes wave-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Paused: restrained, still clearly connected */
+.jukebox[data-playback="paused"] .np__bar-fill {
+  opacity: 0.55;
+}
+
+.jukebox[data-playback="paused"] .np__art-slot::before,
+.jukebox[data-playback="paused"] .np__art-slot::after {
+  opacity: 0.55;
+}
+
+.jukebox[data-playback="paused"] .bulb,
+.jukebox[data-playback="stopped"] .bulb {
+  animation-duration: 7s;
+}
+
+/* --------------------------------------------------------------------------
+   Command feedback overlay (passive acknowledgement)
+   -------------------------------------------------------------------------- */
+
+.jb-feedback {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--screen-pad) * 0.7);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.45em 1.1em 0.45em 0.9em;
+  border-radius: 999px;
+  background: var(--aubergine);
+  color: var(--warm-white);
+  font-size: clamp(15px, 2.4cqh, 24px);
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px -12px rgba(48, 35, 61, 0.6);
+  pointer-events: none;
+  animation: feedback 0.86s var(--ease) both;
+}
+
+.jb-feedback[data-kind="muted"] {
+  background: rgba(48, 35, 61, 0.72);
+}
+
+.jb-feedback .glyph {
+  width: 1.2em;
+  height: 1.2em;
+}
+
+/* --------------------------------------------------------------------------
+   Keyframes
+   -------------------------------------------------------------------------- */
+
+@keyframes sign-in {
+  from {
+    opacity: 0;
+    transform: rotate(-3deg) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-3deg) scale(1);
+  }
+}
+
+@keyframes frame-in {
+  from {
+    opacity: 0;
+    transform: scale(0.975);
+  }
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes art-in {
+  from {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes meta-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes boot-light {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  30%,
+  60% {
+    opacity: 1;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes feedback {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  72% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Visibility and reduced motion
+   -------------------------------------------------------------------------- */
+
+html.is-hidden .bulb,
+html.is-hidden .jb-lamp,
+html.is-hidden .record,
+html.is-hidden .idle__note,
+html.is-hidden .connecting__skeleton i,
+html.is-hidden .connecting__art,
+html.is-hidden .jb-statusline__dot,
+html.is-hidden .jb-wordmark__letter,
+html.is-hidden .jb-wordmark__text::after,
+html.is-hidden .np__wave {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.kiosk *,
+  html.kiosk *::before,
+  html.kiosk *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .bulb,
+  .jb-lamp,
+  .connecting__art,
+  .connecting__skeleton i {
+    opacity: 0.9;
+  }
+
+  .jb-feedback {
+    animation: none;
+    opacity: 1;
+  }
+}

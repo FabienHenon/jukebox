@@ -1,0 +1,36 @@
+# systemd unit for the Jukebox Phoenix release.
+#
+# Install:
+#   sudo cp ops/jukebox.service.example /etc/systemd/system/jukebox.service
+#   sudo cp ops/jukebox.env.example /etc/jukebox/jukebox.env   # then edit SECRET_KEY_BASE
+#   sudo systemctl daemon-reload && sudo systemctl enable --now jukebox
+#
+# Ordering: network -> mosquitto (local MQTT broker) -> shairport-sync -> jukebox
+# -> kiosk session. The "After=" lines only order startup; the jukebox does NOT
+# require the broker or Shairport Sync to be running. It reconnects to the
+# broker with backoff and keeps showing the idle screen meanwhile. Audio keeps
+# flowing through Shairport Sync even if this service (or Chromium) restarts.
+
+[Unit]
+Description=Jukebox kiosk display (Phoenix release)
+After=network-online.target mosquitto.service shairport-sync.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=jukebox
+Group=jukebox
+WorkingDirectory=/opt/jukebox
+EnvironmentFile=/etc/jukebox/jukebox.env
+Environment=LANG=C.UTF-8
+Environment=HOME=/opt/jukebox
+Environment=RELEASE_TMP=/tmp/jukebox
+ExecStart=/opt/jukebox/bin/jukebox start
+ExecStop=/opt/jukebox/bin/jukebox stop
+Restart=on-failure
+RestartSec=3
+# Never make this unit depend on the Chromium kiosk session; both must be
+# independently restartable.
+
+[Install]
+WantedBy=multi-user.target

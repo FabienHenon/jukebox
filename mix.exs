@@ -11,7 +11,18 @@ defmodule Jukebox.MixProject do
       aliases: aliases(),
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      releases: releases()
+    ]
+  end
+
+  # Production release for the Raspberry Pi (see docs/raspberry-pi.md).
+  defp releases do
+    [
+      jukebox: [
+        include_executables_for: [:unix],
+        applications: [runtime_tools: :permanent]
+      ]
     ]
   end
 
@@ -60,7 +71,8 @@ defmodule Jukebox.MixProject do
       {:gettext, "~> 0.26"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      {:tortoise311, "~> 0.12"}
     ]
   end
 

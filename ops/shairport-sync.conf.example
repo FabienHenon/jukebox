@@ -1,0 +1,56 @@
+// Shairport Sync configuration fragment for the Jukebox.
+//
+// Merge these sections into /etc/shairport-sync.conf (do not blindly overwrite
+// your existing file). Shairport Sync must be built with the metadata and MQTT
+// backends, e.g. `--with-metadata --with-mqtt-client --with-alsa`. Check with
+// `shairport-sync -V`, which lists the enabled features.
+//
+// Tested vocabulary: Shairport Sync 4.x. The application expects:
+//   * mqtt.publish_parsed = "yes"  -> title / artist / album / genre / volume /
+//                                     progress / play_* / active_* / client_* topics
+//   * mqtt.publish_cover  = "yes"  -> "cover" topic with the JPEG/PNG bytes
+//   * mqtt.publish_raw    = "yes"  -> optional; adds core/astm (duration) and
+//                                     core/mper (persistent track id)
+//   * mqtt.enable_remote  = "yes"  -> subscribes to <topic>/remote and relays
+//                                     previtem / playpause / nextitem to the sender
+// If a future Shairport release renames a command, change lib/jukebox/shairport.ex
+// (one map) rather than the rest of the application.
+
+general = {
+  name = "Jukebox";               // the name shown in the iOS AirPlay picker
+  output_backend = "alsa";
+  // volume_range_db = 60;        // optional: narrower range for a fixed amplifier
+};
+
+alsa = {
+  output_device = "hw:0";         // list devices with `aplay -l`; e.g. "hw:CARD=sndrpihifiberry"
+  // mixer_control_name = "Digital"; // optional hardware mixer of the DAC
+};
+
+metadata = {
+  enabled = "yes";
+  include_cover_art = "yes";
+  cover_art_cache_directory = ""; // empty: never write cover files to the SD card
+  // pipe_name = "/tmp/shairport-sync-metadata"; // the pipe is not used by the jukebox
+};
+
+mqtt = {
+  enabled = "yes";
+  hostname = "127.0.0.1";         // local broker only (see ops/mosquitto.conf.example)
+  port = 1883;
+  // username = "";
+  // password = "";
+  topic = "jukebox/shairport";    // must match JUKEBOX_MQTT_TOPIC
+  publish_parsed = "yes";
+  publish_cover = "yes";
+  publish_raw = "yes";
+  enable_remote = "yes";
+};
+
+sessioncontrol = {
+  // How long (seconds) Shairport waits before declaring the session over when
+  // the sender goes silent. Combined with JUKEBOX_IDLE_TIMEOUT_MS it defines how
+  // quickly the screen returns to idle.
+  session_timeout = 20;
+  // allow_session_interruption = "no";
+};

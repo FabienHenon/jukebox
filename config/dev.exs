@@ -53,8 +53,14 @@ config :jukebox, JukeboxWeb.Endpoint,
     ]
   ]
 
-# Enable dev routes for dashboard and mailbox
-config :jukebox, dev_routes: true
+# Enable dev routes for dashboard and the jukebox simulator (/dev/simulator),
+# plus development keyboard shortcuts on the kiosk page.
+config :jukebox, dev_routes: true, dev_keys: true, simulator: true
+
+# Demo adapters: no Raspberry Pi, AirPlay sender, MQTT broker or GPIO needed.
+config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, tick_ms: 1_000}
+config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
+config :jukebox, :input, {Jukebox.Inputs.Fake, debounce_ms: 80}
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"

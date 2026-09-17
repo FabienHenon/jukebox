@@ -1,0 +1,14 @@
+# Minimal local Mosquitto broker for the Jukebox.
+#
+#   sudo apt install mosquitto
+#   sudo cp ops/mosquitto.conf.example /etc/mosquitto/conf.d/jukebox.conf
+#   sudo systemctl enable --now mosquitto
+#
+# The broker listens on loopback only: Shairport Sync and the Phoenix release
+# both run on the Pi, nothing else needs to reach it. No persistence: playback
+# metadata must never be written to the SD card.
+
+listener 1883 127.0.0.1
+allow_anonymous true
+persistence false
+max_packet_size 4194304

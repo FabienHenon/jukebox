@@ -10,5 +10,13 @@ config :jukebox, JukeboxWeb.Endpoint, cache_static_manifest: "priv/static/cache_
 # Do not print debug messages in production
 config :logger, level: :info
 
+# Production kiosk defaults: Shairport Sync over MQTT, hidden cursor, no
+# keyboard shortcuts, no simulator route. The adapter selection can still be
+# changed at runtime through environment variables (see runtime.exs).
+config :jukebox, hide_cursor: true, dev_keys: false
+config :jukebox, :metadata_source, {Jukebox.MetadataSources.ShairportMqtt, []}
+config :jukebox, :remote_control, {Jukebox.RemoteControls.Shairport, []}
+config :jukebox, :input, {Jukebox.Inputs.Noop, []}
+
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.

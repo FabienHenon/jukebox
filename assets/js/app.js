@@ -1,21 +1,8 @@
-// If you want to use Phoenix channels, run `mix help phx.gen.channel`
-// to get started and then uncomment the line below.
-// import "./user_socket.js"
-
-// You can include dependencies in two ways.
+// Jukebox kiosk client.
 //
-// The simplest option is to put them in assets/vendor and
-// import them using relative paths:
-//
-//     import "../vendor/some-package.js"
-//
-// Alternatively, you can `npm install some-package --prefix assets` and import
-// them using a path starting with the package name:
-//
-//     import "some-package"
-//
-// If you have dependencies that try to import CSS, esbuild will generate a separate `app.css` file.
-// To load it, simply add a second `<link>` to your `root.html.heex` file.
+// Nothing here talks to an external host. The only runtime dependencies are
+// the Phoenix / LiveView client libraries bundled by esbuild and two small
+// hooks: smooth progress interpolation and development keyboard shortcuts.
 
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.
 import "phoenix_html"
@@ -23,19 +10,23 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/jukebox"
-import topbar from "../vendor/topbar"
+import JukeboxProgress from "./hooks/jukebox_progress"
+import DevelopmentKeys from "./hooks/development_keys"
+import ArtworkPalette from "./hooks/artwork_palette"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, JukeboxProgress, DevelopmentKeys, ArtworkPalette},
 })
 
-// Show progress bar on live navigation and form submits
-topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
-window.addEventListener("phx:page-loading-start", _info => topbar.show(300))
-window.addEventListener("phx:page-loading-stop", _info => topbar.hide())
+// Pause ambient CSS animations while the document is hidden (see jukebox.css).
+const syncVisibility = () => {
+  document.documentElement.classList.toggle("is-hidden", document.hidden)
+}
+document.addEventListener("visibilitychange", syncVisibility)
+syncVisibility()
 
 // connect if there are any LiveViews on the page
 liveSocket.connect()
@@ -80,4 +71,3 @@ if (process.env.NODE_ENV === "development") {
     window.liveReloader = reloader
   })
 }
-

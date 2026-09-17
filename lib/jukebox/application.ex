@@ -11,10 +11,17 @@ defmodule Jukebox.Application do
       JukeboxWeb.Telemetry,
       {DNSCluster, query: Application.get_env(:jukebox, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Jukebox.PubSub},
-      # Start a worker by calling: Jukebox.Worker.start_link(arg)
-      # {Jukebox.Worker, arg},
-      # Start to serve requests, typically the last entry
-      JukeboxWeb.Endpoint
+      # Bounded in-memory artwork cache served at /artwork/:id.
+      Jukebox.Artwork.Store,
+      # Single owner of the playback state; started before the endpoint so
+      # every LiveView mount can read it, and outside the integrations
+      # supervisor so an adapter crash never discards the last known track.
+      Jukebox.Playback.Server,
+      JukeboxWeb.Endpoint,
+      # External integrations (metadata source, remote control, physical
+      # input) start last: a missing broker or Shairport Sync never delays or
+      # blocks the kiosk screen.
+      Jukebox.Integrations
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

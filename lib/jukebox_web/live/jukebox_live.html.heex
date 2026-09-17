@@ -1,0 +1,23 @@
+<Layouts.app flash={@flash} kiosk>
+  <main
+    id="jukebox"
+    class="jukebox"
+    data-mode={@view.mode}
+    data-playback={@view.playback}
+    data-ready={to_string(@ready?)}
+    phx-hook={if @dev_keys?, do: "DevelopmentKeys"}
+  >
+    <.jukebox_frame view={@view}>
+      <%= case @view.mode do %>
+        <% :idle -> %>
+          <.idle_screen view={@view} />
+        <% :connecting -> %>
+          <.connecting_screen view={@view} />
+        <% :now_playing -> %>
+          <.now_playing_screen view={@view} />
+      <% end %>
+      <.command_feedback feedback={@feedback} />
+    </.jukebox_frame>
+    <.boot_overlay ready?={@ready?} />
+  </main>
+</Layouts.app>

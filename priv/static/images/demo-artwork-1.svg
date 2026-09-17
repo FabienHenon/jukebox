@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="a1-bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF5DF"/>
+      <stop offset="1" stop-color="#F8C3D8"/>
+    </linearGradient>
+    <linearGradient id="a1-sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7D96F"/>
+      <stop offset="1" stop-color="#E967A1"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#a1-bg)"/>
+  <circle cx="256" cy="230" r="150" fill="url(#a1-sun)"/>
+  <g fill="#FFF5DF" opacity="0.9">
+    <rect x="80" y="250" width="352" height="14" rx="7"/>
+    <rect x="60" y="284" width="392" height="12" rx="6"/>
+    <rect x="96" y="316" width="320" height="10" rx="5"/>
+  </g>
+  <path d="M0 372c64-40 128-40 192 0s128 40 192 0 96-32 128-24V512H0z" fill="#93D5F4"/>
+  <path d="M0 412c64-36 128-36 192 0s128 36 192 0 96-28 128-20V512H0z" fill="#A7E3C3"/>
+  <circle cx="392" cy="120" r="18" fill="#FFFDF7"/>
+  <circle cx="116" cy="96" r="10" fill="#FFFDF7"/>
+</svg>

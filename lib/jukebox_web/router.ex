@@ -14,30 +14,31 @@ defmodule JukeboxWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # The kiosk: a single public LiveView whose appearance follows the playback
+  # state. It uses a dedicated root layout (full-viewport appliance display).
   scope "/", JukeboxWeb do
     pipe_through :browser
 
-    get "/", PageController, :home
+    live_session :kiosk, root_layout: {JukeboxWeb.Layouts, :kiosk} do
+      live "/", JukeboxLive, :index
+    end
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", JukeboxWeb do
-  #   pipe_through :api
-  # end
+  # Artwork received from the AirPlay sender, served from the in-memory store.
+  scope "/", JukeboxWeb do
+    get "/artwork/:id", ArtworkController, :show
+  end
 
-  # Enable LiveDashboard in development
+  # Development-only routes: LiveDashboard and the jukebox simulator. They are
+  # neither compiled nor routed unless `dev_routes` is set (dev only).
   if Application.compile_env(:jukebox, :dev_routes) do
-    # If you want to use the LiveDashboard in production, you should put
-    # it behind authentication and allow only admins to access it.
-    # If your application does not have an admins-only section yet,
-    # you can use Plug.BasicAuth to set up some basic authentication
-    # as long as you are also using SSL (which you should anyway).
     import Phoenix.LiveDashboard.Router
 
     scope "/dev" do
       pipe_through :browser
 
       live_dashboard "/dashboard", metrics: JukeboxWeb.Telemetry
+      live "/simulator", JukeboxWeb.SimulatorLive, :index
     end
   end
 end

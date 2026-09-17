@@ -21,6 +21,39 @@ config :jukebox, JukeboxWeb.Endpoint,
   pubsub_server: Jukebox.PubSub,
   live_view: [signing_salt: "/S/v4bJ7"]
 
+# ---------------------------------------------------------------------------
+# Jukebox application settings
+#
+# Adapters are selected per environment (see dev.exs / test.exs / prod.exs) and
+# can be overridden at runtime for releases in runtime.exs. Each adapter entry
+# is a `{module, options}` tuple.
+# ---------------------------------------------------------------------------
+
+# Playback state owner. `idle_timeout_ms` is the grace period between the end
+# of an AirPlay session and the return to the idle screen.
+config :jukebox, Jukebox.Playback, idle_timeout_ms: 5_000
+
+# Default adapters: demo everywhere, replaced by Shairport adapters in prod.
+config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, []}
+config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
+config :jukebox, :input, {Jukebox.Inputs.Noop, []}
+
+# In-memory artwork cache served at /artwork/:id.
+config :jukebox, Jukebox.Artwork.Store, max_bytes: 2_000_000, max_entries: 3
+
+# Shairport Sync MQTT integration (used by the production adapters).
+config :jukebox, Jukebox.Shairport,
+  host: "127.0.0.1",
+  port: 1883,
+  topic: "jukebox/shairport",
+  client_id: "jukebox-display",
+  username: nil,
+  password: nil,
+  remote_control_enabled: true
+
+# Development-only conveniences. Both stay off outside dev/test.
+config :jukebox, dev_keys: false, hide_cursor: false
+
 # Configure esbuild (the version is required)
 config :esbuild,
   version: "0.25.4",

@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en" class="kiosk">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <meta name="theme-color" content="#F3A6C4" />
+    <meta name="color-scheme" content="light" />
+    <meta name="robots" content="noindex" />
+    <.live_title default="Jukebox">
+      {assigns[:page_title]}
+    </.live_title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    </script>
+  </head>
+  <body class={["kiosk", JukeboxWeb.Layouts.hide_cursor?() && "kiosk--no-cursor"]}>
+    {@inner_content}
+  </body>
+</html>
