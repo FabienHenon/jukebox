@@ -25,6 +25,9 @@ EnvironmentFile=/etc/jukebox/jukebox.env
 Environment=LANG=C.UTF-8
 Environment=HOME=/opt/jukebox
 Environment=RELEASE_TMP=/tmp/jukebox
+# /var/lib/jukebox, created and owned by the service user: the last chosen
+# animation style is saved there so it survives a power cycle.
+StateDirectory=jukebox
 ExecStart=/opt/jukebox/bin/jukebox start
 ExecStop=/opt/jukebox/bin/jukebox stop
 Restart=on-failure

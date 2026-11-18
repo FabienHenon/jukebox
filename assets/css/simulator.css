@@ -100,6 +100,39 @@
   gap: 0.5rem;
 }
 
+.sim-row--center {
+  align-items: center;
+}
+
+/* Read-only indicator of the current animation style: each press of the
+   button moves the highlight one step along. */
+.sim-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b5a78;
+}
+
+.sim-step {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px rgba(48, 35, 61, 0.1);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.sim-step.is-active {
+  color: #30233d;
+  background: #a7e3c3;
+  box-shadow: inset 0 0 0 1.5px #8fc5a9;
+}
+
 .sim-btn {
   appearance: none;
   border: 0;

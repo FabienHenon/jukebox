@@ -3,7 +3,7 @@ defmodule Jukebox.CommandsTest do
 
   import ExUnit.CaptureLog
 
-  alias Jukebox.Commands
+  alias Jukebox.{Animation, Commands}
   alias Jukebox.Playback.Server
   alias Jukebox.Test.FakeRemoteControl
 
@@ -16,11 +16,24 @@ defmodule Jukebox.CommandsTest do
         {Server, name: :"playback_#{System.unique_integer([:positive])}", pubsub: pubsub}
       )
 
+    animation =
+      start_supervised!(
+        {Animation,
+         name: :"animation_#{System.unique_integer([:positive])}", pubsub: pubsub, style: :waves}
+      )
+
     :ok = Commands.subscribe(pubsub)
     FakeRemoteControl.configure([])
 
     {:ok,
-     opts: [remote_control: FakeRemoteControl, playback: server, pubsub: pubsub], server: server}
+     opts: [
+       remote_control: FakeRemoteControl,
+       playback: server,
+       pubsub: pubsub,
+       animation: animation
+     ],
+     server: server,
+     animation: animation}
   end
 
   defp activate(server, remote \\ :available) do
@@ -102,6 +115,38 @@ defmodule Jukebox.CommandsTest do
     assert Process.alive?(server)
   end
 
+  test "the animation button changes the style without a player or a remote control", %{
+    opts: opts,
+    animation: animation
+  } do
+    FakeRemoteControl.configure(capabilities: MapSet.new())
+
+    assert Commands.dispatch(:cycle_animation, opts) == {:ok, {:animation, :chase}}
+    assert Animation.get(animation) == :chase
+    refute_receive {:remote_control, _}
+
+    assert_receive {:command_feedback,
+                    %{
+                      command: :cycle_animation,
+                      result: {:ok, {:animation, :chase}},
+                      playback_status: :unknown
+                    }}
+
+    assert Commands.dispatch(:cycle_animation, opts) == {:ok, {:animation, :party}}
+  end
+
+  test "a missing animation server is a safe failure", %{opts: opts} do
+    opts = Keyword.put(opts, :animation, :animation_server_that_does_not_exist)
+
+    log =
+      capture_log(fn ->
+        assert Commands.dispatch(:cycle_animation, opts) == {:error, :failed}
+      end)
+
+    assert log =~ "cycle_animation"
+    assert_receive {:command_feedback, %{command: :cycle_animation, result: {:error, :failed}}}
+  end
+
   test "unknown commands are rejected without feedback", %{opts: opts} do
     assert Commands.dispatch(:volume_up, opts) == {:error, :unknown_command}
     refute_receive {:command_feedback, _}
@@ -111,6 +156,7 @@ defmodule Jukebox.CommandsTest do
     assert Commands.parse("next_track") == {:ok, :next_track}
     assert Commands.parse("previous_track") == {:ok, :previous_track}
     assert Commands.parse("toggle_playback") == {:ok, :toggle_playback}
+    assert Commands.parse("cycle_animation") == {:ok, :cycle_animation}
     assert Commands.parse("shutdown") == :error
     assert Commands.parse(42) == :error
   end

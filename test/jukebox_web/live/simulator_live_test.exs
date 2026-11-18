@@ -5,6 +5,7 @@ defmodule JukeboxWeb.SimulatorLiveTest do
 
   import Phoenix.LiveViewTest
 
+  alias Jukebox.Animation
   alias Jukebox.MetadataSources.Demo
   alias Jukebox.Playback.Server
   alias Jukebox.RemoteControls
@@ -19,6 +20,7 @@ defmodule JukeboxWeb.SimulatorLiveTest do
     Demo.reset()
     RemoteControls.Demo.clear()
     Server.reset()
+    Animation.set(:waves)
   end
 
   test "drives a complete session from the controls", %{conn: conn} do
@@ -81,6 +83,27 @@ defmodule JukeboxWeb.SimulatorLiveTest do
     assert has_element?(view, "#command-log code", "next_track")
     Server.sync()
     assert %{title: "Paper Moon Parade"} = Server.get_state()
+  end
+
+  test "the animation button cycles the style through the fake input", %{conn: conn} do
+    {:ok, view, _} = live_isolated(conn, JukeboxWeb.SimulatorLive)
+    assert has_element?(view, "#animation-styles .is-active[data-style=waves]")
+
+    view |> element("#animation-button") |> render_click()
+    assert Animation.get() == :chase
+    assert has_element?(view, "#animation-styles .is-active[data-style=chase]")
+    assert has_element?(view, "#command-log code", "cycle_animation")
+
+    # A second press inside the debounce window would be swallowed, exactly
+    # like switch bounce on the real button.
+    Process.sleep(100)
+    view |> element("#animation-button") |> render_click()
+    assert Animation.get() == :party
+    assert has_element?(view, "#animation-styles .is-active[data-style=party]")
+
+    view |> element("button", "Reset everything") |> render_click()
+    assert Animation.get() == :chase
+    assert has_element?(view, "#animation-styles .is-active[data-style=chase]")
   end
 
   test "edge-case presets and preview sizes", %{conn: conn} do

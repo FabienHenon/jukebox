@@ -1,8 +1,9 @@
 // Jukebox kiosk client.
 //
 // Nothing here talks to an external host. The only runtime dependencies are
-// the Phoenix / LiveView client libraries bundled by esbuild and two small
-// hooks: smooth progress interpolation and development keyboard shortcuts.
+// the Phoenix / LiveView client libraries bundled by esbuild and a few small
+// hooks: smooth progress interpolation, the artwork palette, the beat-driven
+// lights and development keyboard shortcuts.
 
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.
 import "phoenix_html"
@@ -13,12 +14,13 @@ import {hooks as colocatedHooks} from "phoenix-colocated/jukebox"
 import JukeboxProgress from "./hooks/jukebox_progress"
 import DevelopmentKeys from "./hooks/development_keys"
 import ArtworkPalette from "./hooks/artwork_palette"
+import JukeboxLights from "./hooks/jukebox_lights"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, JukeboxProgress, DevelopmentKeys, ArtworkPalette},
+  hooks: {...colocatedHooks, JukeboxProgress, DevelopmentKeys, ArtworkPalette, JukeboxLights},
 })
 
 // Pause ambient CSS animations while the document is hidden (see jukebox.css).

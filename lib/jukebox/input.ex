@@ -3,8 +3,8 @@ defmodule Jukebox.Input do
   Physical-input boundary.
 
   An input adapter is a supervised process that turns hardware events into
-  *semantic* commands (`:previous_track`, `:toggle_playback`, `:next_track`)
-  and hands them to `Jukebox.Commands.dispatch/1`. Pin numbers, switch bounce
+  *semantic* commands (`:previous_track`, `:toggle_playback`, `:next_track`,
+  `:cycle_animation`) and hands them to `Jukebox.Commands.dispatch/1`. Pin numbers, switch bounce
   and hardware libraries never leave the adapter.
 
   Implementations:

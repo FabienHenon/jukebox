@@ -5,7 +5,7 @@ defmodule JukeboxWeb.Presenter do
   fallback copy, what to omit, how to format time) out of HEEx.
   """
 
-  alias Jukebox.Commands
+  alias Jukebox.{Animation, Commands}
   alias Jukebox.Playback.{Artwork, State}
 
   @unknown_track "Unknown track"
@@ -82,6 +82,26 @@ defmodule JukeboxWeb.Presenter do
     end
   end
 
+  @doc """
+  Which beat-driven light show the frame runs for an animation style. The
+  pillars, bulbs and grilles only join in on the Now Playing screen; everywhere
+  else, and for the styles without a beat, they keep their ambient look.
+  """
+  @spec lights(t(), Animation.style()) :: :off | :chase | :party
+  def lights(%__MODULE__{mode: :now_playing}, style) when style in [:chase, :party], do: style
+  def lights(%__MODULE__{}, _style), do: :off
+
+  @doc "Whether the beat runs: the lights hold still unless music is playing."
+  @spec beating?(t()) :: boolean()
+  def beating?(%__MODULE__{} = view), do: view.playback == :playing and view.session == :active
+
+  @doc "Display name of an animation style."
+  @spec animation_label(Animation.style()) :: String.t()
+  def animation_label(:calm), do: "Calm"
+  def animation_label(:waves), do: "Waves"
+  def animation_label(:chase), do: "Chase"
+  def animation_label(:party), do: "Party"
+
   @doc "Presentation of a command acknowledgement (see `Jukebox.Commands`)."
   @spec feedback(Commands.feedback()) :: %{
           id: pos_integer(),
@@ -93,6 +113,9 @@ defmodule JukeboxWeb.Presenter do
     case result do
       {:ok, :sent} ->
         %{id: id, kind: :ok, icon: icon(command, playback), label: label(command, playback)}
+
+      {:ok, {:animation, style}} ->
+        %{id: id, kind: :ok, icon: :animation, label: "Animation: " <> animation_label(style)}
 
       {:error, :no_active_player} ->
         %{id: id, kind: :muted, icon: :info, label: "No active player"}

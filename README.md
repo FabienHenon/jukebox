@@ -36,15 +36,16 @@ focus):
 | `→` | Next track |
 | `C` | Start a demo AirPlay session |
 | `I` | End the demo session (return to idle) |
+| `A` | Animation button: switch to the next animation style |
 
-The transport keys go through the same semantic command service that the
-physical buttons will use.
+The transport and animation keys go through the same semantic command service
+that the physical buttons will use.
 
 ## Verification
 
 ```sh
 mix precommit        # compile --warnings-as-errors, deps.unlock --unused, format, test
-mix test             # 166 tests
+mix test             # 191 tests
 ```
 
 ## Architecture
@@ -81,6 +82,7 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
 | `Jukebox.Shairport`, `Jukebox.Shairport.Decoder`, `Jukebox.Shairport.MqttHandler` | Configuration + command vocabulary, pure MQTT payload decoding, and the connection handler. |
 | `Jukebox.RemoteControl` / `Jukebox.RemoteControls.{Demo, Shairport}` | Remote-control capability boundary. |
 | `Jukebox.Commands` | Semantic command service: checks the state, calls the adapter safely, broadcasts feedback. |
+| `Jukebox.Animation` | Owner of the animation style (`:calm`, `:waves`, `:chase`, `:party`) that the animation button cycles through; broadcasts changes. |
 | `Jukebox.Input`, `Jukebox.Input.Debounce`, `Jukebox.Inputs.{Noop, Fake}` | Physical-input boundary, per-command debouncing, and the two shipped adapters. |
 | `Jukebox.Integrations` | Supervisor for the adapters, started after the endpoint. |
 | `JukeboxWeb.JukeboxLive` + `JukeboxWeb.JukeboxComponents` + `JukeboxWeb.Presenter` | The kiosk: one LiveView, function components per screen, a presenter that turns the domain state into a flat view model. |
@@ -141,6 +143,24 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
   never reads audio, so this is deliberately motion, not a visualiser, and the
   markup is decorative (`aria-hidden`). A real PCM-driven visualiser would need
   an ALSA loopback on the Pi and is left for a later version.
+- **Animation styles.** One button (`:cycle_animation`, a semantic command
+  like the transport ones, but handled locally and available without a
+  player) cycles through four styles held by `Jukebox.Animation`: `calm` (no
+  waves), `waves`, `chase` (the default) and `party`. In the last two the
+  `JukeboxLights` hook runs one timer at the beat rate while music plays: in
+  `chase` the colours travel down the left pillar, up the right one and along
+  the marquee bulbs; in `party` every block and bulb takes a random colour on
+  each beat and the grille waves change direction at random. The base grilles
+  ripple with a wave that crosses them once per beat. The beat is a fixed
+  tempo (`JUKEBOX_ANIMATION_BPM`, 120 by default), not the rhythm of the
+  track, for the same reason the waves are not a visualiser: the application
+  never reads audio. The last chosen style is saved to a one-line file
+  (`animation_style` in `JUKEBOX_STATE_DIR`, `tmp/` in development) and read
+  back at boot, so the jukebox comes back the way it was switched off;
+  `JUKEBOX_ANIMATION_STYLE` only applies until the button has been pressed.
+  The file lives beside the server rather than in the browser's local storage
+  because the kiosk's Chromium profile is in `/tmp`, which does not survive a
+  reboot.
 - **Progress interpolation.** The server renders the anchor (position,
   duration, playing?) as data attributes; a small hook interpolates locally
   four times a second, stops while paused or hidden, and re-syncs whenever the
@@ -149,7 +169,10 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
   keyframes for enter transitions, `phx-remove` JS transitions for leave
   transitions, a dozen small bulbs and lamps for ambient life. Ambient
   animations pause when the document is hidden, and `prefers-reduced-motion`
-  removes movement while keeping every state readable.
+  removes movement while keeping every state readable. The beat-driven styles
+  keep to the same budget: the colour changes are a few small repaints per
+  beat rather than an animation, the lamp flash is opacity and scale, and each
+  grille wave is a single strip sliding behind a static mask.
 - **Fonts.** The `Jukebox` wordmark uses Pacifico, a 1950s/60s brush-script
   face under the SIL Open Font License, self-hosted from `priv/static/fonts`
   (license file alongside). Everything else uses a rounded system stack
@@ -178,7 +201,12 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
 | Paused | Same content, "Paused" pill, progress interpolation stopped, softer plates and slower bulbs. |
 | Ending | Last track kept with a "Session ended" pill, then a fade back to idle after the grace period. |
 | Degraded | Last known track kept, a pulsing "Reconnecting…" pill in the base; a separate "Display reconnecting…" hint when the LiveView socket itself drops. |
-| Command feedback | Non-interactive pill at the bottom of the screen for ~0.9 s: Previous / Play / Pause / Next, or "No active player" / "Control unavailable" / "Command not delivered". |
+| Command feedback | Non-interactive pill at the bottom of the screen for ~0.9 s: Previous / Play / Pause / Next, "Animation: Calm / Waves / Chase / Party", or "No active player" / "Control unavailable" / "Command not delivered". |
+
+The Now Playing screen follows the animation style: `calm` drops the waves,
+`chase` and `party` add the beat-driven pillar blocks, bulbs and grilles while
+music is playing (they hold still while paused and stay ambient on the other
+screens).
 
 ## Simulator
 
@@ -194,8 +222,9 @@ scaled live preview of the kiosk at 1920×1080, 1280×720 and 1024×600:
   position and duration, swap or remove artwork;
 - disconnect / reconnect the metadata link, toggle remote-control
   availability;
-- press the fake physical buttons and inspect the last semantic commands and
-  the full playback state.
+- press the fake physical buttons (Previous, Play / Pause, Next and the
+  animation-style button, with the current style highlighted next to it) and
+  inspect the last semantic commands and the full playback state.
 
 ## Configuration
 
@@ -211,6 +240,8 @@ JUKEBOX_MQTT_CLIENT_ID=jukebox-display  JUKEBOX_MQTT_USERNAME  JUKEBOX_MQTT_PASS
 JUKEBOX_REMOTE_CONTROL_ENABLED=true
 JUKEBOX_IDLE_TIMEOUT_MS=5000
 JUKEBOX_COALESCE_MS=150
+JUKEBOX_ANIMATION_STYLE=calm|waves|chase|party  JUKEBOX_ANIMATION_BPM=120
+JUKEBOX_STATE_DIR=/var/lib/jukebox
 ```
 
 Invalid local values fail fast at boot; unreachable services do not.
@@ -232,7 +263,7 @@ See [docs/raspberry-pi.md](docs/raspberry-pi.md) and the templates under
 lib/jukebox/            domain, adapters, supervisors
 lib/jukebox_web/        kiosk LiveView, components, presenter, simulator, artwork controller
 assets/css/jukebox.css  kiosk design (custom properties, clamp(), container units)
-assets/js/hooks/        progress interpolation, development keyboard shortcuts
+assets/js/hooks/        progress interpolation, artwork palette, beat-driven lights, development keyboard shortcuts
 priv/static/images/     original abstract demo covers and fallback artwork
 ops/, docs/             Raspberry Pi templates and documentation
 test/                   reducer, server, decoder, commands, inputs, store, LiveView tests

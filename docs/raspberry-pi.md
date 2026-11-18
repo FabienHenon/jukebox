@@ -135,6 +135,9 @@ sudo chmod 600 /etc/jukebox/jukebox.env
 | `JUKEBOX_REMOTE_CONTROL_ENABLED` | `true` | relay transport commands |
 | `JUKEBOX_IDLE_TIMEOUT_MS` | `5000` | grace period before the idle screen |
 | `JUKEBOX_COALESCE_MS` | `150` | how long a burst of metadata messages is buffered before the screen updates once (0 disables) |
+| `JUKEBOX_ANIMATION_STYLE` | `chase` | animation style until the animation button has chosen another: `calm`, `waves`, `chase` or `party`. The last choice is saved and wins at the next boot |
+| `JUKEBOX_STATE_DIR` | `/var/lib/jukebox` | where the last chosen animation style is saved (file `animation_style`). The unit creates it with `StateDirectory=jukebox`; delete the file to return to `JUKEBOX_ANIMATION_STYLE` |
+| `JUKEBOX_ANIMATION_BPM` | `120` | tempo of the `chase` and `party` lights, 40 to 240 (a fixed pace: the audio is not analysed) |
 
 Invalid local values (a non-numeric port, an unknown adapter name) fail fast
 at boot with a readable message. Unreachable services do not.
@@ -192,7 +195,9 @@ boundary for the real buttons is ready:
 - `Jukebox.Input.Debounce` – pure per-command debouncer (80 ms default) that
   the GPIO adapter must apply at the edge, exactly like `Jukebox.Inputs.Fake`.
 - `Jukebox.Commands.dispatch/1` – the single entry point for the semantic
-  commands `:previous_track`, `:toggle_playback`, `:next_track`.
+  commands `:previous_track`, `:toggle_playback`, `:next_track` and
+  `:cycle_animation` (the animation-style button, which is handled inside the
+  application and needs no AirPlay sender).
 
 A future `Jukebox.Inputs.Gpio` (for example on top of `circuits_gpio`, not
 added yet because it was not verifiable without the hardware) should read its
@@ -202,7 +207,7 @@ mapping from configuration rather than hard-coding pins:
 # config/runtime.exs (prod), example only
 config :jukebox, :input,
   {Jukebox.Inputs.Gpio,
-   pins: [previous_track: 17, toggle_playback: 27, next_track: 22],
+   pins: [previous_track: 17, toggle_playback: 27, next_track: 22, cycle_animation: 23],
    pull: :up, active: :low, debounce_ms: 80}
 ```
 

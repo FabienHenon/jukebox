@@ -17,6 +17,8 @@ defmodule Jukebox.Application do
       # every LiveView mount can read it, and outside the integrations
       # supervisor so an adapter crash never discards the last known track.
       Jukebox.Playback.Server,
+      # Animation style selected by the physical button (display state).
+      Jukebox.Animation,
       JukeboxWeb.Endpoint,
       # External integrations (metadata source, remote control, physical
       # input) start last: a missing broker or Shairport Sync never delays or

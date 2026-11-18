@@ -22,6 +22,13 @@ defmodule Jukebox.Inputs.FakeTest do
     assert_receive {:dispatched, :next_track}
   end
 
+  test "the animation button is a semantic command like the others", %{name: name} do
+    assert Fake.press(:cycle_animation, server: name, at: 0) == :accepted
+    assert Fake.press(:cycle_animation, server: name, at: 10) == :debounced
+    assert_receive {:dispatched, :cycle_animation}
+    refute_receive {:dispatched, _}, 20
+  end
+
   test "switch bounce never produces repeated commands", %{name: name} do
     assert Fake.press(:toggle_playback, server: name, at: 0) == :accepted
     assert Fake.press(:toggle_playback, server: name, at: 3) == :debounced

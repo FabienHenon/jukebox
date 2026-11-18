@@ -5,7 +5,7 @@ defmodule JukeboxWeb.JukeboxLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Jukebox.Commands
+  alias Jukebox.{Animation, Commands}
   alias Jukebox.Demo.Catalog
   alias Jukebox.MetadataSources.Demo
   alias Jukebox.Playback.{Artwork, Server}
@@ -21,6 +21,7 @@ defmodule JukeboxWeb.JukeboxLiveTest do
     Demo.reset()
     RemoteControls.Demo.clear()
     Server.reset()
+    Animation.set(:waves)
   end
 
   defp notify(events) do
@@ -316,7 +317,82 @@ defmodule JukeboxWeb.JukeboxLiveTest do
     end
   end
 
+  describe "animation styles" do
+    test "the default style shows the waves and leaves the lights alone", %{conn: conn} do
+      play_track(Catalog.track(0))
+      {:ok, view, _} = live(conn, ~p"/")
+
+      assert has_element?(view, "#jukebox[data-animation=waves] .np__waves")
+      assert has_element?(view, "#jukebox-body[phx-hook=JukeboxLights][data-lights=off]")
+      assert has_element?(view, "#jukebox-body[data-beat-ms='500'][style='--beat:500ms']")
+    end
+
+    test "the button cycles the style on a connected kiosk", %{conn: conn} do
+      play_track(Catalog.track(0))
+      {:ok, view, _} = live(conn, ~p"/")
+
+      assert Commands.dispatch(:cycle_animation) == {:ok, {:animation, :chase}}
+      assert has_element?(view, "#jukebox[data-animation=chase] .np__waves")
+      assert has_element?(view, "#jukebox-body[data-lights=chase][data-beating=true]")
+      assert has_element?(view, ".jb-feedback[data-kind=ok]", "Animation: Chase")
+
+      Commands.dispatch(:cycle_animation)
+      assert has_element?(view, "#jukebox-body[data-lights=party][data-beating=true]")
+      assert has_element?(view, ".jb-feedback", "Animation: Party")
+
+      Commands.dispatch(:cycle_animation)
+      assert has_element?(view, "#jukebox[data-animation=calm] .screen--playing")
+      refute has_element?(view, ".np__waves")
+      assert has_element?(view, "#jukebox-body[data-lights=off]")
+
+      Commands.dispatch(:cycle_animation)
+      assert has_element?(view, "#jukebox[data-animation=waves] .np__waves")
+    end
+
+    test "the lights hold still while paused and stay off outside Now Playing", %{conn: conn} do
+      Animation.set(:party)
+      {:ok, view, _} = live(conn, ~p"/")
+      assert has_element?(view, "#jukebox[data-mode=idle][data-animation=party]")
+      assert has_element?(view, "#jukebox-body[data-lights=off]")
+
+      play_track(Catalog.track(0), [{:playback_changed, :paused}])
+      assert has_element?(view, "#jukebox-body[data-lights=party][data-beating=false]")
+
+      notify([{:playback_changed, :playing}])
+      assert has_element?(view, "#jukebox-body[data-lights=party][data-beating=true]")
+    end
+
+    test "the style works without a player and is restored on a fresh mount", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/")
+      Commands.dispatch(:cycle_animation)
+      assert has_element?(view, ".jb-feedback[data-kind=ok]", "Animation: Chase")
+
+      {:ok, fresh, _} = live(conn, ~p"/")
+      assert has_element?(fresh, "#jukebox[data-animation=chase]")
+    end
+
+    test "the hook owns the pillar blocks, the bulbs and nothing else", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/")
+
+      for id <- ~w(pillar-left pillar-right lights-left lights-right) do
+        assert has_element?(view, "##{id}[phx-update=ignore]")
+      end
+
+      assert has_element?(view, "#pillar-left .jb-seg[data-color=lemon]")
+      assert has_element?(view, "#lights-right .bulb[data-color=mint]")
+      assert has_element?(view, ".jb-base .jb-grille .jb-grille__wave path")
+      refute has_element?(view, "#boot .jb-lights[phx-update]")
+    end
+  end
+
   describe "development keyboard shortcuts" do
+    test "the A key presses the animation button", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/")
+      render_hook(view, "dev_command", %{"command" => "cycle_animation"})
+      assert Animation.get() == :chase
+      assert has_element?(view, "#jukebox[data-animation=chase]")
+    end
+
     test "route through the semantic command service", %{conn: conn} do
       {:ok, view, _} = live(conn, ~p"/")
       assert has_element?(view, "#jukebox[phx-hook=DevelopmentKeys]")

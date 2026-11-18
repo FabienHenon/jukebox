@@ -170,7 +170,51 @@ defmodule JukeboxWeb.PresenterTest do
     end
   end
 
+  describe "lights/2 and beating?/1" do
+    setup do
+      playing =
+        State.new(session_status: :active, title: "A", playback_status: :playing)
+
+      {:ok, playing: playing}
+    end
+
+    test "only the beat-driven styles light the frame, and only on Now Playing", %{
+      playing: playing
+    } do
+      view = Presenter.present(playing, @now)
+      assert Presenter.lights(view, :chase) == :chase
+      assert Presenter.lights(view, :party) == :party
+      assert Presenter.lights(view, :waves) == :off
+      assert Presenter.lights(view, :calm) == :off
+
+      idle = Presenter.present(State.new(), @now)
+      assert Presenter.lights(idle, :party) == :off
+
+      connecting = Presenter.present(State.new(session_status: :connecting), @now)
+      assert Presenter.lights(connecting, :chase) == :off
+    end
+
+    test "the beat runs only while music is playing", %{playing: playing} do
+      assert Presenter.beating?(Presenter.present(playing, @now))
+      refute Presenter.beating?(Presenter.present(%{playing | playback_status: :paused}, @now))
+      refute Presenter.beating?(Presenter.present(%{playing | session_status: :ending}, @now))
+      refute Presenter.beating?(Presenter.present(State.new(), @now))
+    end
+  end
+
   describe "feedback/1" do
+    test "names the animation style the button selected" do
+      for {style, label} <- [calm: "Calm", waves: "Waves", chase: "Chase", party: "Party"] do
+        assert %{label: "Animation: " <> ^label, icon: :animation, kind: :ok} =
+                 Presenter.feedback(%{
+                   id: 1,
+                   command: :cycle_animation,
+                   result: {:ok, {:animation, style}},
+                   playback_status: :unknown
+                 })
+      end
+    end
+
     test "labels sent commands by intent" do
       assert %{label: "Next", icon: :next, kind: :ok} =
                Presenter.feedback(%{

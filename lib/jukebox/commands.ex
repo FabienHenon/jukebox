@@ -4,24 +4,33 @@ defmodule Jukebox.Commands do
 
   Every physical or development input (GPIO buttons, the fake input used in
   tests, development keyboard shortcuts, the simulator) ends up here with one
-  of `:previous_track`, `:toggle_playback` or `:next_track`. The service
-  decides whether the command can be honoured, forwards it to the configured
-  `Jukebox.RemoteControl` adapter and broadcasts a small feedback message on
-  PubSub (`{:command_feedback, map}`) so the kiosk can acknowledge the press.
+  of the semantic commands:
 
-  Failures in the adapter are logged and converted into a safe `{:error, _}`
-  outcome; they never propagate to the caller or the playback state process.
+    * `:previous_track`, `:toggle_playback`, `:next_track` - transport
+      commands. The service decides whether they can be honoured and forwards
+      them to the configured `Jukebox.RemoteControl` adapter.
+    * `:cycle_animation` - a display command. It never leaves the jukebox: it
+      moves `Jukebox.Animation` to its next style, with or without a player.
+
+  Either way a small feedback message is broadcast on PubSub
+  (`{:command_feedback, map}`) so the kiosk can acknowledge the press.
+
+  Failures are logged and converted into a safe `{:error, _}` outcome; they
+  never propagate to the caller or the playback state process.
   """
 
   require Logger
 
-  alias Jukebox.Playback
+  alias Jukebox.{Animation, Playback}
 
   @topic "commands"
-  @commands [:previous_track, :toggle_playback, :next_track]
+  @commands [:previous_track, :toggle_playback, :next_track, :cycle_animation]
 
-  @type command :: :previous_track | :toggle_playback | :next_track
-  @type outcome :: {:ok, :sent} | {:error, :no_active_player | :control_unavailable | :failed}
+  @type command :: :previous_track | :toggle_playback | :next_track | :cycle_animation
+  @type outcome ::
+          {:ok, :sent}
+          | {:ok, {:animation, Animation.style()}}
+          | {:error, :no_active_player | :control_unavailable | :failed}
   @type feedback :: %{
           id: pos_integer(),
           command: command(),
@@ -29,7 +38,7 @@ defmodule Jukebox.Commands do
           playback_status: Playback.State.playback_status()
         }
 
-  @doc "The semantic transport commands supported in version one."
+  @doc "The semantic commands an input may emit."
   def commands, do: @commands
 
   def topic, do: @topic
@@ -38,24 +47,25 @@ defmodule Jukebox.Commands do
   def subscribe(pubsub \\ Jukebox.PubSub), do: Phoenix.PubSub.subscribe(pubsub, @topic)
 
   @doc """
-  Routes a semantic command to the remote-control adapter.
+  Carries out a semantic command: transport commands go to the remote-control
+  adapter, `:cycle_animation` to the animation style owner.
 
   Options (mainly for tests):
 
     * `:remote_control` - adapter module (default: configured adapter)
     * `:playback` - playback server (default `Jukebox.Playback.Server`)
+    * `:animation` - animation server (default `Jukebox.Animation`)
     * `:pubsub` - PubSub server for feedback (default `Jukebox.PubSub`)
   """
   @spec dispatch(command(), keyword()) :: outcome() | {:error, :unknown_command}
   def dispatch(command, opts \\ [])
 
   def dispatch(command, opts) when command in @commands do
-    remote = Keyword.get_lazy(opts, :remote_control, &configured_remote_control/0)
     playback = Keyword.get(opts, :playback, Playback.Server)
     pubsub = Keyword.get(opts, :pubsub, Jukebox.PubSub)
 
     state = Playback.Server.get_state(playback)
-    result = route(command, state, remote)
+    result = perform(command, state, opts)
 
     feedback = %{
       id: System.unique_integer([:positive, :monotonic]),
@@ -85,6 +95,23 @@ defmodule Jukebox.Commands do
   defp configured_remote_control do
     {module, _opts} = Application.fetch_env!(:jukebox, :remote_control)
     module
+  end
+
+  defp perform(:cycle_animation, _state, opts) do
+    cycle_animation(Keyword.get(opts, :animation, Animation))
+  end
+
+  defp perform(command, state, opts) do
+    remote = Keyword.get_lazy(opts, :remote_control, &configured_remote_control/0)
+    route(command, state, remote)
+  end
+
+  defp cycle_animation(server) do
+    {:ok, {:animation, Animation.cycle(server)}}
+  catch
+    :exit, reason ->
+      Logger.error("[commands] cycle_animation exited: #{inspect(reason)}")
+      {:error, :failed}
   end
 
   defp route(command, state, remote) do

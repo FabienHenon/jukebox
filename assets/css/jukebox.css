@@ -33,6 +33,9 @@
   --mint: #a7e3c3;
   --mint-light: #c5edd7;
   --mint-dark: #8fc5a9;
+  --lilac: #cbb7f0;
+  --lilac-light: #ddd0f7;
+  --lilac-dark: #ad97d8;
   --warm-white: #fffdf7;
   --chrome: #e7dde2;
   --chrome-dark: #c9b8c2;
@@ -286,6 +289,14 @@ body.kiosk--no-cursor * {
   --c: var(--rose);
 }
 
+/* Lilac only appears in the "party" animation style. */
+.bulb[data-color="lilac"],
+.jb-seg[data-color="lilac"] {
+  --c: var(--lilac);
+  --c-light: var(--lilac-light);
+  --c-dark: var(--lilac-dark);
+}
+
 /* Pillars ------------------------------------------------------------------ */
 
 .jb-pillar {
@@ -386,12 +397,19 @@ body.kiosk--no-cursor * {
 }
 
 .jb-grille {
+  position: relative;
   height: 60%;
   border-radius: 999px;
   background: repeating-linear-gradient(90deg, var(--aubergine) 0 3px, transparent 3px 9px);
   opacity: 0.28;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
   mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+}
+
+/* The rippling version of the grille, used by the beat-driven styles (see
+   "Beat-driven lights" below). Not rendered at all otherwise. */
+.jb-grille__bars {
+  display: none;
 }
 
 .jb-statusline {
@@ -982,6 +1000,88 @@ body.kiosk--no-cursor * {
 }
 
 /* --------------------------------------------------------------------------
+   Beat-driven lights ("chase" and "party" animation styles)
+   The JukeboxLights hook sets html[data-lights] while a light show runs,
+   recolours the pillar blocks and bulbs on every beat and flips
+   html[data-beat] so the flash below replays. --beat is the length of one
+   beat, set on .jb-body by the server. Still transform and opacity only: the
+   colour changes are a few small repaints per beat, not an animation.
+   -------------------------------------------------------------------------- */
+
+/* Lamps and bulbs flash on the beat and settle until the next one. */
+html[data-lights] .jb-body .bulb,
+html[data-lights] .jb-body .jb-lamp {
+  animation: beat-flash-a var(--beat, 500ms) cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+html[data-lights][data-beat="1"] .jb-body .bulb,
+html[data-lights][data-beat="1"] .jb-body .jb-lamp {
+  animation-name: beat-flash-b;
+}
+
+/* Two identical animations: alternating their names restarts the flash. */
+@keyframes beat-flash-a {
+  from {
+    opacity: 1;
+    transform: scale(1.14);
+  }
+  to {
+    opacity: 0.6;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes beat-flash-b {
+  from {
+    opacity: 1;
+    transform: scale(1.14);
+  }
+  to {
+    opacity: 0.6;
+    transform: scale(0.94);
+  }
+}
+
+/* Grilles: the still bars give way to bars cut out (static mask) of a wave
+   that slides behind them, left to right, one crest per beat. Only the wave
+   moves, and only by transform. The hook may reverse it in "party". */
+html[data-lights] .jb-grille {
+  background: none;
+  opacity: 0.36;
+}
+
+html[data-lights] .jb-grille__bars {
+  display: block;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 9px);
+  mask-image: repeating-linear-gradient(90deg, #000 0 3px, transparent 3px 9px);
+}
+
+.jb-grille__wave {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 200%;
+  height: 100%;
+  display: block;
+  fill: var(--aubergine);
+  transform: translateX(-50%);
+  animation: grille-wave calc(var(--beat, 500ms) * 4) linear infinite;
+}
+
+html:not([data-lights-live]) .jb-grille__wave {
+  animation-play-state: paused;
+}
+
+@keyframes grille-wave {
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
    Command feedback overlay (passive acknowledgement)
    -------------------------------------------------------------------------- */
 
@@ -1148,6 +1248,7 @@ html.is-hidden .connecting__art,
 html.is-hidden .jb-statusline__dot,
 html.is-hidden .jb-wordmark__letter,
 html.is-hidden .jb-wordmark__text::after,
+html.is-hidden .jb-grille__wave,
 html.is-hidden .np__wave {
   animation-play-state: paused;
 }

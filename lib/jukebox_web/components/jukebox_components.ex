@@ -17,6 +17,14 @@ defmodule JukeboxWeb.JukeboxComponents do
   (`gen`, bumped by the LiveView whenever the screen, artwork or track
   changes), so an id is never reused. Tests select these elements by class and
   `data-*` attributes instead.
+
+  ## Beat-driven lights
+
+  In the `:chase` and `:party` animation styles the `JukeboxLights` hook
+  recolours the pillar blocks and marquee bulbs on every beat. Those rows are
+  `phx-update="ignore"` (hence their fixed ids) so a LiveView patch never
+  repaints them with the colours rendered here. The frame only tells the hook
+  what to do through `data-lights`, `data-beating` and `data-beat-ms`.
   """
 
   use Phoenix.Component
@@ -30,11 +38,27 @@ defmodule JukeboxWeb.JukeboxComponents do
 
   @doc "The pink jukebox body: marquee, side pillars, screen window and base."
   attr :view, Presenter, required: true
+  attr :animation, :atom, default: :waves, doc: "the animation style (see `Jukebox.Animation`)"
+  attr :beat_ms, :integer, default: 500, doc: "length of one beat of the light show"
   slot :inner_block, required: true
 
   def jukebox_frame(assigns) do
+    assigns =
+      assign(assigns,
+        lights: Presenter.lights(assigns.view, assigns.animation),
+        beating?: Presenter.beating?(assigns.view)
+      )
+
     ~H"""
-    <div class="jb-body">
+    <div
+      id="jukebox-body"
+      class="jb-body"
+      phx-hook="JukeboxLights"
+      data-lights={@lights}
+      data-beating={to_string(@beating?)}
+      data-beat-ms={@beat_ms}
+      style={"--beat:#{@beat_ms}ms"}
+    >
       <.marquee wave={@view.mode != :now_playing} />
       <.pillar side="left" />
       <section class="jb-screen" aria-label="Jukebox display">
@@ -53,9 +77,9 @@ defmodule JukeboxWeb.JukeboxComponents do
   def marquee(assigns) do
     ~H"""
     <header class="jb-marquee">
-      <.lights count={6} />
+      <.lights id="lights-left" count={6} />
       <h1 class="jb-wordmark"><.sign_letters wave={@wave} /></h1>
-      <.lights count={6} offset={6} />
+      <.lights id="lights-right" count={6} offset={6} />
     </header>
     """
   end
@@ -83,7 +107,11 @@ defmodule JukeboxWeb.JukeboxComponents do
     """
   end
 
-  @doc "A row of pastel bulbs that light up in sequence."
+  @doc """
+  A row of pastel bulbs that light up in sequence. With an `id`, the row is
+  handed over to the `JukeboxLights` hook (see the moduledoc).
+  """
+  attr :id, :string, default: nil
   attr :count, :integer, default: 6
   attr :offset, :integer, default: 0
 
@@ -91,7 +119,7 @@ defmodule JukeboxWeb.JukeboxComponents do
     assigns = assign(assigns, :bulbs, bulbs(assigns.count, assigns.offset))
 
     ~H"""
-    <div class="jb-lights" aria-hidden="true">
+    <div id={@id} class="jb-lights" aria-hidden="true" phx-update={@id && "ignore"}>
       <span :for={{i, color} <- @bulbs} class="bulb" data-color={color} style={"--i:#{i}"}></span>
     </div>
     """
@@ -101,7 +129,12 @@ defmodule JukeboxWeb.JukeboxComponents do
 
   def pillar(assigns) do
     ~H"""
-    <div class={"jb-pillar jb-pillar--#{@side}"} aria-hidden="true">
+    <div
+      id={"pillar-#{@side}"}
+      class={"jb-pillar jb-pillar--#{@side}"}
+      aria-hidden="true"
+      phx-update="ignore"
+    >
       <i class="jb-seg" data-color="lemon"><b class="jb-lamp"></b></i>
       <i class="jb-seg" data-color="sky"><b class="jb-lamp"></b></i>
       <i class="jb-seg" data-color="mint"><b class="jb-lamp"></b></i>
@@ -114,13 +147,44 @@ defmodule JukeboxWeb.JukeboxComponents do
   def base(assigns) do
     ~H"""
     <footer class="jb-base">
-      <div class="jb-grille" aria-hidden="true"></div>
+      <.grille />
       <p id="status-line" class="jb-statusline" data-reconnecting={to_string(@view.reconnecting?)}>
         <span :if={@view.reconnecting?} class="jb-statusline__dot" aria-hidden="true"></span>
         {@view.status_line}
       </p>
-      <div class="jb-grille" aria-hidden="true"></div>
+      <.grille />
     </footer>
+    """
+  end
+
+  # Outline of the wave that travels through a grille: a band mirrored around
+  # the centre line whose thickness swings between 20% and 100% of the height.
+  # The strip is twice as wide as the grille and holds eight wavelengths, so
+  # sliding it by half its width loops seamlessly.
+  @grille_wave Enum.join(
+                 ["M0 8 Q25 -8 50 8"] ++
+                   Enum.map(2..16, &"T#{&1 * 50} 8") ++
+                   ["L800 32 Q775 16 750 32"] ++
+                   Enum.map(14..0//-1, &"T#{&1 * 50} 32") ++ ["Z"],
+                 " "
+               )
+
+  @doc """
+  A speaker grille in the base. Normally a row of still bars; in the beat-driven
+  styles the bars are cut out of a wave that slides behind them, so their
+  heights ripple along the grille (see `.jb-grille` in jukebox.css).
+  """
+  def grille(assigns) do
+    assigns = assign(assigns, :wave, @grille_wave)
+
+    ~H"""
+    <div class="jb-grille" aria-hidden="true">
+      <div class="jb-grille__bars">
+        <svg class="jb-grille__wave" viewBox="0 0 800 40" preserveAspectRatio="none">
+          <path d={@wave} />
+        </svg>
+      </div>
+    </div>
     """
   end
 
@@ -189,6 +253,7 @@ defmodule JukeboxWeb.JukeboxComponents do
 
   attr :view, Presenter, required: true
   attr :gen, :map, required: true
+  attr :waves?, :boolean, default: true, doc: "false in the `:calm` animation style"
 
   def now_playing_screen(assigns) do
     ~H"""
@@ -225,7 +290,7 @@ defmodule JukeboxWeb.JukeboxComponents do
               <.status_pill :if={@view.status_pill} pill={@view.status_pill} />
               <span :if={@view.volume} class="np__volume">Volume {@view.volume}%</span>
             </div>
-            <.waves level={@view.wave_level} />
+            <.waves :if={@waves?} level={@view.wave_level} />
           </div>
         </div>
       </div>
@@ -377,6 +442,8 @@ defmodule JukeboxWeb.JukeboxComponents do
           <path d="M6 6h12v12H6z" />
         <% :ending -> %>
           <path d="M12 3a9 9 0 1 0 9 9h-2.5A6.5 6.5 0 1 1 12 5.5z" />
+        <% :animation -> %>
+          <path d="M10 3l1.9 5.1L17 10l-5.1 1.9L10 17l-1.9-5.1L3 10l5.1-1.9zM18 14l.9 2.6 2.6.9-2.6.9L18 21l-.9-2.6-2.6-.9 2.6-.9z" />
         <% _ -> %>
           <circle cx="12" cy="12" r="4" />
       <% end %>

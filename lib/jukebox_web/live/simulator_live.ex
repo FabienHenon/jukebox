@@ -6,7 +6,8 @@ if Application.compile_env(:jukebox, :simulator, false) do
     Drives the demo metadata source and the fake physical input so the whole
     kiosk experience can be exercised on a laptop: sessions, tracks, playback
     status, metadata edits, artwork, progress, delayed/partial metadata,
-    metadata disconnection, remote-control availability and button presses.
+    metadata disconnection, remote-control availability and button presses
+    (transport and animation style).
     A scaled live preview of the kiosk is embedded for the three target
     resolutions.
 
@@ -16,7 +17,7 @@ if Application.compile_env(:jukebox, :simulator, false) do
 
     use JukeboxWeb, :live_view
 
-    alias Jukebox.{Commands, Playback}
+    alias Jukebox.{Animation, Commands, Playback}
     alias Jukebox.Demo.Catalog
     alias Jukebox.Inputs.Fake
     alias Jukebox.MetadataSources.Demo
@@ -30,17 +31,23 @@ if Application.compile_env(:jukebox, :simulator, false) do
       if connected?(socket) do
         Playback.Server.subscribe()
         Commands.subscribe()
+        Animation.subscribe()
       end
 
       {:ok,
        socket
        |> assign(page_title: "Simulator", commands: [], preview: "1280x720")
+       |> assign(animation: Animation.get())
        |> assign_state(Playback.Server.get_state())
        |> assign_forms()}
     end
 
     @impl true
     def handle_info({:playback_state, state}, socket), do: {:noreply, assign_state(socket, state)}
+
+    def handle_info({:animation_style, style}, socket) do
+      {:noreply, assign(socket, animation: style)}
+    end
 
     def handle_info({:command_feedback, feedback}, socket) do
       {:noreply, assign(socket, commands: Enum.take([feedback | socket.assigns.commands], 8))}
@@ -141,6 +148,7 @@ if Application.compile_env(:jukebox, :simulator, false) do
       Demo.reset()
       Playback.Server.reset()
       RemoteControls.Demo.clear()
+      Animation.set(Animation.default_style())
       {:noreply, assign(socket, commands: [])}
     end
 
@@ -333,7 +341,9 @@ if Application.compile_env(:jukebox, :simulator, false) do
 
             <section class="sim-card">
               <h2 class="sim-card__title">Physical buttons</h2>
-              <p class="sim-hint">Debounced fake input → Jukebox.Commands → remote control</p>
+              <p class="sim-hint">
+                Debounced fake input → Jukebox.Commands → remote control or animation style
+              </p>
               <div class="sim-row">
                 <button class="sim-btn" phx-click="press" phx-value-command="previous_track">
                   ⏮ Previous
@@ -350,6 +360,26 @@ if Application.compile_env(:jukebox, :simulator, false) do
                 <button class="sim-btn sim-btn--small" phx-click="remote" phx-value-value="unavailable">
                   Remote unavailable
                 </button>
+              </div>
+              <div class="sim-row sim-row--center">
+                <button
+                  id="animation-button"
+                  class="sim-btn"
+                  phx-click="press"
+                  phx-value-command="cycle_animation"
+                >
+                  ✨ Animation style
+                </button>
+                <ol id="animation-styles" class="sim-steps" aria-label="Animation styles">
+                  <li
+                    :for={style <- Animation.styles()}
+                    class={["sim-step", @animation == style && "is-active"]}
+                    data-style={style}
+                    aria-current={@animation == style && "true"}
+                  >
+                    {style}
+                  </li>
+                </ol>
               </div>
               <ul id="command-log" class="sim-log">
                 <li :for={fb <- @commands}>
@@ -403,7 +433,7 @@ if Application.compile_env(:jukebox, :simulator, false) do
                 </iframe>
               </div>
               <p class="sim-hint">
-                Click inside the preview, then use ← Space → and I / C keyboard shortcuts.
+                Click inside the preview, then use ← Space → and I / C / A keyboard shortcuts.
               </p>
             </section>
 

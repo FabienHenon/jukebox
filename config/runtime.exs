@@ -100,6 +100,20 @@ if config_env() == :prod do
     password: System.get_env("JUKEBOX_MQTT_PASSWORD"),
     remote_control_enabled: remote_enabled
 
+  animation_style = env.("JUKEBOX_ANIMATION_STYLE", "chase")
+
+  unless animation_style in ["calm", "waves", "chase", "party"] do
+    raise "environment variable JUKEBOX_ANIMATION_STYLE must be \"calm\", \"waves\", \"chase\" or \"party\", got: #{inspect(animation_style)}"
+  end
+
+  config :jukebox, Jukebox.Animation,
+    default_style: String.to_atom(animation_style),
+    bpm: int_env.("JUKEBOX_ANIMATION_BPM", 120, 40, 240),
+    # The last chosen style is saved here. The systemd unit creates the
+    # directory (StateDirectory=jukebox); if it cannot be written the style is
+    # simply not kept across restarts.
+    state_file: Path.join(env.("JUKEBOX_STATE_DIR", "/var/lib/jukebox"), "animation_style")
+
   case metadata_adapter do
     "mqtt" ->
       config :jukebox, :metadata_source, {Jukebox.MetadataSources.ShairportMqtt, []}

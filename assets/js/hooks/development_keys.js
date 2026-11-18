@@ -8,6 +8,7 @@
 //   ←      previous_track      →      next_track
 //   Space  toggle_playback     I      idle (end demo session)
 //   C      connect (start demo session)
+//   A      cycle_animation (the animation-style button)
 
 const KEYS = {
   ArrowLeft: "previous_track",
@@ -17,6 +18,8 @@ const KEYS = {
   I: "idle",
   c: "connect",
   C: "connect",
+  a: "cycle_animation",
+  A: "cycle_animation",
 }
 
 const isTyping = (target) =>

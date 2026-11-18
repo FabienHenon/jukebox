@@ -4,17 +4,18 @@
     class="jukebox"
     data-mode={@view.mode}
     data-playback={@view.playback}
+    data-animation={@animation}
     data-ready={to_string(@ready?)}
     phx-hook={if @dev_keys?, do: "DevelopmentKeys"}
   >
-    <.jukebox_frame view={@view}>
+    <.jukebox_frame view={@view} animation={@animation} beat_ms={@beat_ms}>
       <%= case @view.mode do %>
         <% :idle -> %>
           <.idle_screen view={@view} gen={@gen} />
         <% :connecting -> %>
           <.connecting_screen view={@view} gen={@gen} />
         <% :now_playing -> %>
-          <.now_playing_screen view={@view} gen={@gen} />
+          <.now_playing_screen view={@view} gen={@gen} waves?={@animation != :calm} />
       <% end %>
       <.command_feedback feedback={@feedback} />
     </.jukebox_frame>

@@ -4,8 +4,8 @@ defmodule JukeboxWeb.JukeboxLive do
   by `Jukebox.Playback.Server`.
 
   On every mount the complete current state is loaded *before* rendering, and
-  on connected mount the view subscribes to playback and command feedback
-  broadcasts. The socket never becomes the source of truth: a browser refresh
+  on connected mount the view subscribes to playback, animation style and
+  command feedback broadcasts. The socket never becomes the source of truth: a browser refresh
   or a LiveView reconnect simply re-reads the OTP process.
 
   Development keyboard shortcuts (`dev_keys` config, compile-time) route
@@ -16,7 +16,7 @@ defmodule JukeboxWeb.JukeboxLive do
 
   import JukeboxWeb.JukeboxComponents
 
-  alias Jukebox.{Commands, Playback}
+  alias Jukebox.{Animation, Commands, Playback}
   alias JukeboxWeb.Presenter
 
   @dev_keys Application.compile_env(:jukebox, :dev_keys, false)
@@ -29,6 +29,7 @@ defmodule JukeboxWeb.JukeboxLive do
     if connected?(socket) do
       Playback.Server.subscribe()
       Commands.subscribe()
+      Animation.subscribe()
     end
 
     state = Playback.Server.get_state()
@@ -39,13 +40,18 @@ defmodule JukeboxWeb.JukeboxLive do
        page_title: "Jukebox",
        dev_keys?: @dev_keys,
        ready?: connected?(socket),
-       feedback: nil
+       feedback: nil,
+       animation: Animation.get(),
+       beat_ms: Animation.beat_ms()
      )
      |> assign_view(state)}
   end
 
   @impl true
   def handle_info({:playback_state, state}, socket), do: {:noreply, assign_view(socket, state)}
+
+  def handle_info({:animation_style, style}, socket),
+    do: {:noreply, assign(socket, animation: style)}
 
   def handle_info({:command_feedback, feedback}, socket) do
     presented = Presenter.feedback(feedback)
@@ -97,8 +103,9 @@ defmodule JukeboxWeb.JukeboxLive do
   defp bump(gen, _key, false), do: gen
 
   if @dev_keys do
-    # Transport keys go through the semantic command service; the two session
-    # keys drive the demo metadata source directly (no-ops when it is not running).
+    # Transport and animation keys go through the semantic command service; the
+    # two session keys drive the demo metadata source directly (no-ops when it
+    # is not running).
     defp dev_command("connect"), do: Jukebox.MetadataSources.Demo.start_session()
     defp dev_command("idle"), do: Jukebox.MetadataSources.Demo.end_session()
 

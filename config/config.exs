@@ -35,6 +35,12 @@ config :jukebox, JukeboxWeb.Endpoint,
 # is buffered before being applied and broadcast as one state.
 config :jukebox, Jukebox.Playback, idle_timeout_ms: 5_000, coalesce_ms: 150
 
+# Kiosk animation style: the one used until the animation button has chosen
+# another (`:calm`, `:waves`, `:chase` or `:party`), the tempo of the
+# beat-driven styles (fixed: the application never reads audio) and the file
+# the last chosen style is saved to (`nil`: kept in memory only).
+config :jukebox, Jukebox.Animation, default_style: :chase, bpm: 120, state_file: nil
+
 # Default adapters: demo everywhere, replaced by Shairport adapters in prod.
 config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, []}
 config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
