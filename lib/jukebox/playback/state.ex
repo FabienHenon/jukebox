@@ -12,8 +12,9 @@ defmodule Jukebox.Playback.State do
 
     * metadata arrives asynchronously and in any order, so partial maps are
       merged and never wipe fields with `nil`;
-    * a new track (different `track_id`, or a different title when no id is
-      known) clears all track fields so stale artwork is never paired with a
+    * a new track (a different title or artist; a different `track_id` only
+      when titles cannot be compared, because senders re-identify the same
+      song) clears all track fields so stale artwork is never paired with a
       new title;
     * artwork tagged with a track id that is not the current one is ignored;
     * progress values are validated and clamped, invalid durations are dropped;
@@ -279,20 +280,29 @@ defmodule Jukebox.Playback.State do
   defp ensure_active(%{session_status: :active} = state), do: {state, []}
   defp ensure_active(state), do: {%{state | session_status: :active}, [:cancel_idle]}
 
+  # Is this metadata about a different track than the one on screen?
+  #
+  # The persistent id alone is not a reliable identity: YouTube Music (through
+  # Shairport Sync) announces a song with a provisional id and partial fields,
+  # then again with another id and the complete fields. So the id only decides
+  # when titles cannot be compared; when both titles are known, the same title
+  # by a compatible artist is the same track whatever the id says. Treating it
+  # as new would drop the artwork that arrived in between.
   defp new_track?(state, attrs) do
     incoming_id = attrs[:track_id]
     incoming_title = attrs[:title]
 
     cond do
-      incoming_id != nil and state.track_id != nil ->
-        incoming_id != state.track_id
-
-      incoming_id == nil and incoming_title != nil and state.title != nil ->
-        incoming_title != state.title
-
-      true ->
-        false
+      incoming_id != nil and incoming_id == state.track_id -> false
+      incoming_title != nil and state.title != nil -> not same_song?(state, attrs)
+      incoming_id != nil and state.track_id != nil -> true
+      true -> false
     end
+  end
+
+  defp same_song?(state, attrs) do
+    attrs[:title] == state.title and
+      (attrs[:artist] == nil or state.artist == nil or attrs[:artist] == state.artist)
   end
 
   defp freeze_position(

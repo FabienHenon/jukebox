@@ -6,6 +6,17 @@ defmodule JukeboxWeb.JukeboxComponents do
 
   Everything here is passive: no buttons, no pointer handlers, no focusable
   transport symbols. Decorative elements carry `aria-hidden`.
+
+  ## DOM ids and leave transitions
+
+  Screens, artwork and track text fade out through `phx-remove`, which keeps
+  the old element in the DOM until its transition ends. If a new element with
+  the *same id* is rendered meanwhile, LiveView patches the leaving element in
+  place and then removes it when the transition finishes, leaving a blank
+  screen. Every such element therefore takes its id from a generation counter
+  (`gen`, bumped by the LiveView whenever the screen, artwork or track
+  changes), so an id is never reused. Tests select these elements by class and
+  `data-*` attributes instead.
   """
 
   use Phoenix.Component
@@ -131,10 +142,11 @@ defmodule JukeboxWeb.JukeboxComponents do
   # -- screens -----------------------------------------------------------------
 
   attr :view, Presenter, required: true
+  attr :gen, :map, required: true
 
   def idle_screen(assigns) do
     ~H"""
-    <section id="screen-idle" class="screen screen--idle" phx-remove={screen_out()}>
+    <section id={"screen-idle-#{@gen.screen}"} class="screen screen--idle" phx-remove={screen_out()}>
       <div class="idle">
         <div class="idle__stage" aria-hidden="true">
           <span class="idle__note idle__note--1">♪</span>
@@ -152,10 +164,15 @@ defmodule JukeboxWeb.JukeboxComponents do
   end
 
   attr :view, Presenter, required: true
+  attr :gen, :map, required: true
 
   def connecting_screen(assigns) do
     ~H"""
-    <section id="screen-connecting" class="screen screen--connecting" phx-remove={screen_out()}>
+    <section
+      id={"screen-connecting-#{@gen.screen}"}
+      class="screen screen--connecting"
+      phx-remove={screen_out()}
+    >
       <div class="connecting">
         <div class="connecting__art" aria-hidden="true">
           <img src={@view.artwork_url} alt="" decoding="async" />
@@ -171,24 +188,39 @@ defmodule JukeboxWeb.JukeboxComponents do
   end
 
   attr :view, Presenter, required: true
+  attr :gen, :map, required: true
 
   def now_playing_screen(assigns) do
     ~H"""
-    <section id="screen-playing" class="screen screen--playing" phx-remove={screen_out()}>
+    <section
+      id={"screen-playing-#{@gen.screen}"}
+      class="screen screen--playing"
+      phx-remove={screen_out()}
+    >
       <div class="np">
         <div class="np__art-slot">
           <.artwork
+            id={"art-#{@gen.screen}-#{@gen.art}"}
             url={@view.artwork_url}
             key={@view.artwork_key}
             fallback?={@view.artwork_fallback?}
           />
         </div>
         <div class="np__meta-slot">
-          <div id={"meta-#{@view.track_key}"} class="np__meta" phx-remove={meta_out()}>
+          <div
+            id={"meta-#{@gen.screen}-#{@gen.meta}"}
+            class="np__meta"
+            data-track-key={@view.track_key}
+            phx-remove={meta_out()}
+          >
             <h2 class="np__title">{@view.title}</h2>
             <p :if={@view.artist} class="np__artist">{@view.artist}</p>
             <p :if={@view.album} class="np__album">{@view.album}</p>
-            <.progress :if={@view.progress} progress={@view.progress} key={@view.track_key} />
+            <.progress
+              :if={@view.progress}
+              id={"progress-#{@gen.screen}-#{@gen.meta}"}
+              progress={@view.progress}
+            />
             <div class="np__status">
               <.status_pill :if={@view.status_pill} pill={@view.status_pill} />
               <span :if={@view.volume} class="np__volume">Volume {@view.volume}%</span>
@@ -208,6 +240,7 @@ defmodule JukeboxWeb.JukeboxComponents do
   The `ArtworkPalette` hook samples the image once and tints the plates and
   progress fill through CSS custom properties (see artwork_palette.js).
   """
+  attr :id, :string, required: true, doc: "unique per rendered instance (see moduledoc)"
   attr :url, :string, required: true
   attr :key, :string, required: true
   attr :fallback?, :boolean, default: false
@@ -215,7 +248,7 @@ defmodule JukeboxWeb.JukeboxComponents do
   def artwork(assigns) do
     ~H"""
     <figure
-      id={"art-#{@key}"}
+      id={@id}
       class="np__art"
       data-fallback={to_string(@fallback?)}
       data-palette-key={@key}
@@ -232,13 +265,13 @@ defmodule JukeboxWeb.JukeboxComponents do
   `JukeboxProgress` hook interpolates locally while playing and stops while
   paused. The inner block is `phx-update="ignore"` so the hook owns it.
   """
+  attr :id, :string, required: true, doc: "unique per rendered instance (see moduledoc)"
   attr :progress, :map, required: true
-  attr :key, :string, required: true
 
   def progress(assigns) do
     ~H"""
     <div
-      id={"progress-#{@key}"}
+      id={@id}
       class="np__progress"
       phx-hook="JukeboxProgress"
       data-position={@progress.position_ms}
@@ -246,7 +279,7 @@ defmodule JukeboxWeb.JukeboxComponents do
       data-playing={to_string(@progress.playing?)}
       data-total={@progress.total}
     >
-      <div id={"progress-live-#{@key}"} class="np__progress-live" phx-update="ignore">
+      <div id={"#{@id}-live"} class="np__progress-live" phx-update="ignore">
         <div class="np__bar" aria-hidden="true">
           <div class="np__bar-fill" data-progress-fill></div>
         </div>

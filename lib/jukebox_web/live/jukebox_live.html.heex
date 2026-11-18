@@ -10,11 +10,11 @@
     <.jukebox_frame view={@view}>
       <%= case @view.mode do %>
         <% :idle -> %>
-          <.idle_screen view={@view} />
+          <.idle_screen view={@view} gen={@gen} />
         <% :connecting -> %>
-          <.connecting_screen view={@view} />
+          <.connecting_screen view={@view} gen={@gen} />
         <% :now_playing -> %>
-          <.now_playing_screen view={@view} />
+          <.now_playing_screen view={@view} gen={@gen} />
       <% end %>
       <.command_feedback feedback={@feedback} />
     </.jukebox_frame>

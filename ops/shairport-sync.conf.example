@@ -9,8 +9,11 @@
 //   * mqtt.publish_parsed = "yes"  -> title / artist / album / genre / volume /
 //                                     progress / play_* / active_* / client_* topics
 //   * mqtt.publish_cover  = "yes"  -> "cover" topic with the JPEG/PNG bytes
-//   * mqtt.publish_raw    = "yes"  -> optional; adds core/astm (duration) and
-//                                     core/mper (persistent track id)
+//   * mqtt.publish_raw    = "yes"  -> needed for clean track changes: publishes the
+//                                     bundle markers ssnc/mdst and ssnc/mden, plus
+//                                     core/astm (duration) and core/mper (track id)
+//   * mqtt.empty_payload_substitute -> leave at its default "--"; the application
+//                                     reads that string as "no value"
 //   * mqtt.enable_remote  = "yes"  -> subscribes to <topic>/remote and relays
 //                                     previtem / playpause / nextitem to the sender
 // If a future Shairport release renames a command, change lib/jukebox/shairport.ex

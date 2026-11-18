@@ -17,8 +17,6 @@ defmodule Jukebox.RemoteControls.Shairport do
 
   @behaviour Jukebox.RemoteControl
 
-  require Logger
-
   alias Jukebox.Shairport
 
   @publish_timeout_ms 1_000
@@ -54,7 +52,10 @@ defmodule Jukebox.RemoteControls.Shairport do
   defp publish(config, payload) do
     topic = Shairport.remote_topic(config)
 
-    case Tortoise311.publish(config.client_id, topic, payload,
+    # Tortoise311 types the payload as an iolist (a bare binary breaks its
+    # contract for Dialyzer), so the command string is wrapped in a list. The
+    # bytes on the wire are identical.
+    case Tortoise311.publish(config.client_id, topic, [payload],
            qos: 0,
            timeout: @publish_timeout_ms
          ) do

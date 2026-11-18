@@ -72,15 +72,23 @@ defmodule Jukebox.Shairport.DecoderTest do
       assert_in_delta pos, 258, 2
     end
 
-    test "cover art becomes a binary artwork event; empty cover clears" do
+    test "cover art becomes a binary artwork event" do
       assert Decoder.decode(["cover"], <<0xFF, 0xD8, 0xFF, 1, 2>>) ==
                {:ok, [{:artwork_binary, <<0xFF, 0xD8, 0xFF, 1, 2>>}]}
+    end
 
-      assert Decoder.decode(["cover"], "") == {:ok, [{:artwork_changed, nil}]}
+    test "the parsed track id carries the same identity as the raw persistent id" do
+      assert Decoder.decode(["track_id"], "18AC3C26D57FC54B") ==
+               {:ok, [{:metadata_changed, %{track_id: "18AC3C26D57FC54B"}}]}
+
+      assert Decoder.decode(["core", "mper"], <<0x18AC3C26D57FC54B::unsigned-big-64>>) ==
+               {:ok, [{:metadata_changed, %{track_id: "18AC3C26D57FC54B"}}]}
     end
 
     test "known-but-irrelevant topics are ignored, unknown ones reported" do
       assert Decoder.decode(["client_ip"], "192.168.1.10") == {:ok, []}
+      assert Decoder.decode(["frame_position_and_time"], "4276825249/2610627026600") == {:ok, []}
+      assert Decoder.decode(["ssnc", "phbt"], "4276825249/2610627026600") == {:ok, []}
       assert Decoder.decode(["remote"], "nextitem") == {:ok, []}
       assert Decoder.decode(["something", "deep"], "x") == :unknown
       assert Decoder.decode([], "x") == :unknown
@@ -96,10 +104,10 @@ defmodule Jukebox.Shairport.DecoderTest do
                {:ok, [{:metadata_changed, %{artist: "Artist"}}]}
 
       assert Decoder.decode(["core", "astm"], <<0, 3, 13, 64>>) ==
-               {:ok, [{:progress_changed, %{duration_ms: 200_000}}]}
+               {:ok, [{:metadata_changed, %{duration_ms: 200_000}}]}
 
       assert Decoder.decode(["core", "astm"], "200000") ==
-               {:ok, [{:progress_changed, %{duration_ms: 200_000}}]}
+               {:ok, [{:metadata_changed, %{duration_ms: 200_000}}]}
 
       assert Decoder.decode(["core", "mper"], <<0, 0, 0, 0, 0, 0, 0, 255>>) ==
                {:ok, [{:metadata_changed, %{track_id: "FF"}}]}
@@ -130,6 +138,42 @@ defmodule Jukebox.Shairport.DecoderTest do
                {:ok, [{:remote_control_changed, :available}]}
 
       assert Decoder.decode(["ssnc", "clip"], "10.0.0.2") == {:ok, []}
+    end
+  end
+
+  describe "metadata bundle markers" do
+    test "mdst and mden bracket a bundle" do
+      assert Decoder.decode(["ssnc", "mdst"], "4277139737") == {:ok, [:bundle_start]}
+      assert Decoder.decode(["ssnc", "mden"], "4277139737") == {:ok, [:bundle_end]}
+    end
+  end
+
+  describe "empty payloads (Shairport publishes \"--\" instead of nothing)" do
+    test "empty text fields are dropped instead of being shown or wiping known values" do
+      for topic <- [
+            ["album"],
+            ["genre"],
+            ["title"],
+            ["artist"],
+            ["core", "asal"],
+            ["core", "asgn"]
+          ],
+          payload <- ["--", ""] do
+        assert Decoder.decode(topic, payload) == {:ok, []}
+      end
+    end
+
+    test "an empty cover is ignored rather than rejected or clearing the artwork" do
+      for topic <- [["cover"], ["ssnc", "PICT"]], payload <- ["--", ""] do
+        assert Decoder.decode(topic, payload) == {:ok, []}
+      end
+    end
+
+    test "empty ids and source names are dropped" do
+      assert Decoder.decode(["track_id"], "--") == {:ok, []}
+      assert Decoder.decode(["core", "mper"], "--") == {:ok, []}
+      assert Decoder.decode(["client_name"], "--") == {:ok, []}
+      assert Decoder.decode(["ssnc", "snam"], "") == {:ok, []}
     end
   end
 
@@ -166,7 +210,7 @@ defmodule Jukebox.Shairport.DecoderTest do
       assert Decoder.decode(["core", "astm"], "abc") == {:ok, []}
 
       assert Decoder.decode(["core", "astm"], "1234") ==
-               {:ok, [{:progress_changed, %{duration_ms: 1234}}]}
+               {:ok, [{:metadata_changed, %{duration_ms: 1234}}]}
 
       assert Decoder.decode(["core", "astm"], <<0, 0, 0, 0>>) == {:ok, []}
       assert Decoder.decode(["core", "mper"], "   ") == {:ok, []}

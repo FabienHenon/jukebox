@@ -44,7 +44,7 @@ physical buttons will use.
 
 ```sh
 mix precommit        # compile --warnings-as-errors, deps.unlock --unused, format, test
-mix test             # 144 tests
+mix test             # 166 tests
 ```
 
 ## Architecture
@@ -101,9 +101,25 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
   truth. LiveViews read it on every mount and subscribe on connected mount, so
   a browser refresh, a LiveView reconnect or an adapter crash never loses the
   current screen. The reducer is pure and covered by unit tests.
-- **Track identity and stale artwork.** A different track id (or a different
-  title when no id is known) clears every track field, and artwork tagged with
-  an old track id is ignored. Stale text is never paired with stale artwork.
+- **Track identity and stale artwork.** A new track clears every track
+  field, and artwork tagged with an old track id is ignored, so stale text is
+  never paired with stale artwork. Identity follows what is displayed: the
+  same title by the same artist is the same track even under a new id, because
+  senders re-announce a song (YouTube Music publishes a provisional id with
+  partial fields, then another id with the complete ones). The id only decides
+  when titles cannot be compared.
+- **Track changes arrive as bursts.** Shairport Sync publishes one MQTT
+  message per field. Three things keep the screen from showing the half-updated
+  states in between: the MQTT handler collects the fields between Shairport's
+  bundle markers (`ssnc/mdst` … `ssnc/mden`, needs `publish_raw`) into one
+  event; the playback server buffers a burst for `coalesce_ms` (150 ms,
+  `JUKEBOX_COALESCE_MS`) and broadcasts a single state; and Shairport's
+  empty-payload substitute (`--`) is treated as "no value" instead of text.
+- **Fading elements never reuse a DOM id.** LiveView keeps an element with
+  `phx-remove` in the DOM while it fades, and patches a new element with the
+  same id into the leaving one, which then disappears with it. Screens,
+  artwork and track text take their ids from generation counters held by the
+  LiveView, so rapid changes cannot blank the display.
 - **Session end vs. track change.** `session_ended` moves to `:ending`,
   keeps the last track visible and starts the configurable idle grace period
   (`JUKEBOX_IDLE_TIMEOUT_MS`). Flushes and play-end markers only change the
@@ -194,6 +210,7 @@ JUKEBOX_MQTT_HOST=127.0.0.1  JUKEBOX_MQTT_PORT=1883  JUKEBOX_MQTT_TOPIC=jukebox/
 JUKEBOX_MQTT_CLIENT_ID=jukebox-display  JUKEBOX_MQTT_USERNAME  JUKEBOX_MQTT_PASSWORD
 JUKEBOX_REMOTE_CONTROL_ENABLED=true
 JUKEBOX_IDLE_TIMEOUT_MS=5000
+JUKEBOX_COALESCE_MS=150
 ```
 
 Invalid local values fail fast at boot; unreachable services do not.

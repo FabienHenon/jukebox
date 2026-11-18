@@ -16,7 +16,14 @@ defmodule Jukebox.Shairport.Decoder do
       (`minm`, `asar`, `asal`, `asgn`, `astm`, `mper`, `pbeg`, `prgr`, ...)
 
   Binary artwork is returned as `{:artwork_binary, bytes}` for the handler
-  to validate and store; everything else is a `Jukebox.Playback.Event`.
+  to validate and store. `ssnc/mdst` and `ssnc/mden` become `:bundle_start`
+  and `:bundle_end`: Shairport Sync brackets every metadata bundle with them,
+  which lets the handler deliver a bundle as one atomic event. Everything
+  else is a `Jukebox.Playback.Event`.
+
+  Shairport Sync never publishes an empty payload; it sends a substitute
+  string (`--` by default) instead. Such fields are dropped here, so "no
+  value" never reaches the display as text and never wipes a known value.
   Malformed payloads never raise: they are dropped or reduced to whatever
   part is usable.
   """
@@ -24,9 +31,16 @@ defmodule Jukebox.Shairport.Decoder do
   @rtp_rate 44_100
   @uint32 4_294_967_296
 
-  @ignored_parsed ~w(client_ip server_ip client_device_id client_mac_address format remote songalbum songartist)
+  # Parsed topics that carry nothing the display needs.
+  @ignored_parsed ~w(client_ip server_ip client_device_id client_mac_address format remote
+                     songalbum songartist frame_position_and_time output_format output_frame_rate)
 
-  @type event :: Jukebox.Playback.Event.t() | {:artwork_binary, binary()}
+  # Shairport Sync never publishes an empty MQTT payload: it substitutes this
+  # string (`mqtt.empty_payload_substitute`, default "--"). It means "no value".
+  @empty_substitute "--"
+
+  @type event ::
+          Jukebox.Playback.Event.t() | {:artwork_binary, binary()} | :bundle_start | :bundle_end
 
   @doc "Decodes one message. Returns `{:ok, events}` or `:unknown` for unrecognised topics."
   @spec decode([String.t()], binary()) :: {:ok, [event()]} | :unknown
@@ -47,8 +61,9 @@ defmodule Jukebox.Shairport.Decoder do
   def decode(["artist"], payload), do: text(:artist, payload)
   def decode(["album"], payload), do: text(:album, payload)
   def decode(["genre"], payload), do: text(:genre, payload)
-  def decode(["client_name"], payload), do: {:ok, [{:source_changed, %{source_name: payload}}]}
-  def decode(["client_model"], payload), do: {:ok, [{:source_changed, %{source_model: payload}}]}
+  def decode(["client_name"], payload), do: source(:source_name, payload)
+  def decode(["client_model"], payload), do: source(:source_model, payload)
+  def decode(["track_id"], payload), do: track_id(payload)
 
   # -- numeric and binary payloads ------------------------------------------------
 
@@ -67,17 +82,12 @@ defmodule Jukebox.Shairport.Decoder do
 
   def decode(["core", "astm"], payload) do
     case uint32(payload) do
-      {:ok, ms} when ms > 0 -> {:ok, [{:progress_changed, %{duration_ms: ms}}]}
+      {:ok, ms} when ms > 0 -> {:ok, [{:metadata_changed, %{duration_ms: ms}}]}
       _ -> {:ok, []}
     end
   end
 
-  def decode(["core", "mper"], payload) do
-    case persistent_id(payload) do
-      nil -> {:ok, []}
-      id -> {:ok, [{:metadata_changed, %{track_id: id}}]}
-    end
-  end
+  def decode(["core", "mper"], payload), do: track_id(payload)
 
   def decode(["core", _other], _payload), do: {:ok, []}
 
@@ -89,11 +99,13 @@ defmodule Jukebox.Shairport.Decoder do
   def decode(["ssnc", "pend"], _), do: {:ok, [{:playback_changed, :stopped}]}
   def decode(["ssnc", "abeg"], _), do: {:ok, [{:session_started, %{}}]}
   def decode(["ssnc", "aend"], _), do: {:ok, [{:session_ended, %{reason: :sender_disconnected}}]}
-  def decode(["ssnc", "snam"], payload), do: {:ok, [{:source_changed, %{source_name: payload}}]}
-  def decode(["ssnc", "cmod"], payload), do: {:ok, [{:source_changed, %{source_model: payload}}]}
+  def decode(["ssnc", "snam"], payload), do: source(:source_name, payload)
+  def decode(["ssnc", "cmod"], payload), do: source(:source_model, payload)
   def decode(["ssnc", "pvol"], payload), do: {:ok, volume(payload)}
   def decode(["ssnc", "prgr"], payload), do: {:ok, progress(payload)}
   def decode(["ssnc", "PICT"], payload), do: {:ok, artwork(payload)}
+  def decode(["ssnc", "mdst"], _), do: {:ok, [:bundle_start]}
+  def decode(["ssnc", "mden"], _), do: {:ok, [:bundle_end]}
 
   def decode(["ssnc", code], _) when code in ["daid", "acre"],
     do: {:ok, [{:remote_control_changed, :available}]}
@@ -104,15 +116,39 @@ defmodule Jukebox.Shairport.Decoder do
 
   # -- helpers -----------------------------------------------------------------------
 
-  defp text(field, payload) when is_binary(payload),
-    do: {:ok, [{:metadata_changed, %{field => payload}}]}
+  defp empty?(payload), do: payload in ["", @empty_substitute]
+
+  # An empty field says nothing: it must not wipe a value the same track
+  # already has (senders often publish a partial bundle first).
+  defp text(field, payload) when is_binary(payload) do
+    if empty?(payload), do: {:ok, []}, else: {:ok, [{:metadata_changed, %{field => payload}}]}
+  end
 
   defp text(_field, _payload), do: {:ok, []}
 
-  defp artwork(payload) when is_binary(payload) and byte_size(payload) > 0,
-    do: [{:artwork_binary, payload}]
+  defp source(field, payload) when is_binary(payload) do
+    if empty?(payload), do: {:ok, []}, else: {:ok, [{:source_changed, %{field => payload}}]}
+  end
 
-  defp artwork(_), do: [{:artwork_changed, nil}]
+  defp source(_field, _payload), do: {:ok, []}
+
+  defp track_id(payload) when is_binary(payload) do
+    case if(empty?(payload), do: nil, else: persistent_id(payload)) do
+      nil -> {:ok, []}
+      id -> {:ok, [{:metadata_changed, %{track_id: id}}]}
+    end
+  end
+
+  defp track_id(_payload), do: {:ok, []}
+
+  # An empty cover ("no picture yet") is ignored rather than clearing the
+  # artwork: a new track already resets it, and senders publish an empty
+  # picture right before the real one.
+  defp artwork(payload) when is_binary(payload) do
+    if empty?(payload), do: [], else: [{:artwork_binary, payload}]
+  end
+
+  defp artwork(_), do: []
 
   # "airplay_volume,volume,lowest_volume,highest_volume" e.g. "-15.00,-25.50,-96.30,0.00".
   # AirPlay volume ranges from -30 (silent) to 0 (max); -144 means muted.
@@ -184,6 +220,4 @@ defmodule Jukebox.Shairport.Decoder do
       id -> if String.valid?(id) and String.length(id) <= 64, do: id, else: nil
     end
   end
-
-  defp persistent_id(_), do: nil
 end

@@ -22,7 +22,7 @@ config :phoenix_live_view,
 # not set), which mirrors production.
 config :jukebox, dev_keys: true, simulator: true
 
-config :jukebox, Jukebox.Playback, idle_timeout_ms: 60_000
+config :jukebox, Jukebox.Playback, idle_timeout_ms: 60_000, coalesce_ms: 0
 config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, tick_ms: nil}
 config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
 config :jukebox, :input, {Jukebox.Inputs.Fake, debounce_ms: 80}

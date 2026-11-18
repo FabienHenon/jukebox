@@ -65,6 +65,11 @@ Merge the sections of `ops/shairport-sync.conf.example` into
 `publish_parsed`, `publish_cover`, `publish_raw` and `enable_remote` all set
 to `"yes"`, publishing under the topic `jukebox/shairport`.
 
+Keep `publish_raw` on. It is what publishes the bundle markers (`ssnc/mdst`
+and `ssnc/mden`) that let the jukebox treat a track change as one update, plus
+the track duration and persistent id. Shairport Sync replaces empty payloads
+with `--` (`mqtt.empty_payload_substitute`); the jukebox expects that default.
+
 Pick the ALSA device for your DAC with `aplay -l` and set `alsa.output_device`.
 
 ```sh
@@ -129,6 +134,7 @@ sudo chmod 600 /etc/jukebox/jukebox.env
 | `JUKEBOX_MQTT_USERNAME` / `JUKEBOX_MQTT_PASSWORD` | unset | optional credentials |
 | `JUKEBOX_REMOTE_CONTROL_ENABLED` | `true` | relay transport commands |
 | `JUKEBOX_IDLE_TIMEOUT_MS` | `5000` | grace period before the idle screen |
+| `JUKEBOX_COALESCE_MS` | `150` | how long a burst of metadata messages is buffered before the screen updates once (0 disables) |
 
 Invalid local values (a non-numeric port, an unknown adapter name) fail fast
 at boot with a readable message. Unreachable services do not.
@@ -222,6 +228,7 @@ shutdown while running. The application never touches this button.
 
 | Symptom | Where to look |
 | --- | --- |
+| "Receiving music…" flashes or the cover is missing after a track change | `publish_raw` must be `"yes"` (bundle markers); check that `ssnc/mdst` and `ssnc/mden` appear in `mosquitto_sub`; raise `JUKEBOX_COALESCE_MS` if the sender delivers its metadata slowly |
 | Idle screen never changes when playing | `mosquitto_sub -t 'jukebox/shairport/#' -v`; Shairport `mqtt` block; `journalctl -u shairport-sync` |
 | "Reconnecting…" on the screen | broker down or `JUKEBOX_MQTT_HOST/PORT` wrong; `journalctl -u jukebox` shows the backoff |
 | Buttons show "Control unavailable" | `enable_remote` not set, `JUKEBOX_REMOTE_CONTROL_ENABLED=false`, or the sender does not support DACP |

@@ -140,11 +140,15 @@ defmodule JukeboxWeb.Presenter do
   defp artwork_key(%{artwork: %Artwork{id: id}}), do: id
   defp artwork_key(state), do: "fallback-" <> track_key(state)
 
-  defp track_key(%{track_id: id}) when is_binary(id),
+  # Identity of the track text on screen. It follows what is displayed (title
+  # and artist), not the sender's track id: senders re-announce the same song
+  # under a new id and complete its album later, and neither should replay the
+  # track-change animation.
+  defp track_key(%{title: nil, artist: nil, track_id: id}) when is_binary(id),
     do: "id-" <> Base.url_encode64(id, padding: false)
 
   defp track_key(state),
-    do: "h" <> Integer.to_string(:erlang.phash2({state.title, state.artist, state.album}))
+    do: "h" <> Integer.to_string(:erlang.phash2({state.title, state.artist}))
 
   defp progress(%{duration_ms: duration, position_ms: position} = state, now)
        when is_integer(duration) and duration > 0 and is_integer(position) do

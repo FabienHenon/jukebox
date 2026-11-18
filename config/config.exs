@@ -30,8 +30,10 @@ config :jukebox, JukeboxWeb.Endpoint,
 # ---------------------------------------------------------------------------
 
 # Playback state owner. `idle_timeout_ms` is the grace period between the end
-# of an AirPlay session and the return to the idle screen.
-config :jukebox, Jukebox.Playback, idle_timeout_ms: 5_000
+# of an AirPlay session and the return to the idle screen. `coalesce_ms` is how
+# long a burst of adapter events (a track change arrives as many small messages)
+# is buffered before being applied and broadcast as one state.
+config :jukebox, Jukebox.Playback, idle_timeout_ms: 5_000, coalesce_ms: 150
 
 # Default adapters: demo everywhere, replaced by Shairport adapters in prod.
 config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, []}

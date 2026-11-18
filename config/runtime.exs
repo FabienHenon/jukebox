@@ -88,7 +88,8 @@ if config_env() == :prod do
   remote_enabled = bool_env.("JUKEBOX_REMOTE_CONTROL_ENABLED", "true")
 
   config :jukebox, Jukebox.Playback,
-    idle_timeout_ms: int_env.("JUKEBOX_IDLE_TIMEOUT_MS", 5_000, 0, 600_000)
+    idle_timeout_ms: int_env.("JUKEBOX_IDLE_TIMEOUT_MS", 5_000, 0, 600_000),
+    coalesce_ms: int_env.("JUKEBOX_COALESCE_MS", 150, 0, 2_000)
 
   config :jukebox, Jukebox.Shairport,
     host: env.("JUKEBOX_MQTT_HOST", "127.0.0.1"),

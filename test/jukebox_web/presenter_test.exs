@@ -78,6 +78,19 @@ defmodule JukeboxWeb.PresenterTest do
       assert with_art.artwork_key == "demo-2"
     end
 
+    test "the track key follows what is displayed, not the sender's id or the album" do
+      base = State.new(session_status: :active, title: "Thunderstruck", artist: "AC/DC")
+      key = Presenter.present(%{base | track_id: "provisional"}, @now).track_key
+
+      assert Presenter.present(%{base | track_id: "final", album: "The Razors Edge"}, @now).track_key ==
+               key
+
+      assert Presenter.present(%{base | artist: "Other"}, @now).track_key != key
+
+      id_only = Presenter.present(State.new(session_status: :active, track_id: "a"), @now)
+      assert id_only.track_key != Presenter.present(State.new(track_id: "b"), @now).track_key
+    end
+
     test "progress is only shown with a valid duration and interpolates while playing" do
       base =
         State.new(

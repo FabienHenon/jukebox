@@ -55,7 +55,7 @@ defmodule JukeboxWeb.JukeboxLiveTest do
       {:ok, view, _} = live(conn, ~p"/")
       assert has_element?(view, "#boot.is-done")
       assert has_element?(view, "h1.jb-wordmark .jb-wordmark__letter[style='--i:6']", "x")
-      assert has_element?(view, "#screen-idle")
+      assert has_element?(view, "#jukebox .screen--idle")
       assert has_element?(view, "#jukebox[data-mode=idle]")
     end
 
@@ -71,7 +71,7 @@ defmodule JukeboxWeb.JukeboxLiveTest do
     test "shows the source and never shows blank progress", %{conn: conn} do
       notify([{:session_started, %{source_name: "Test iPhone"}}])
       {:ok, view, html} = live(conn, ~p"/")
-      assert has_element?(view, "#screen-connecting")
+      assert has_element?(view, "#jukebox .screen--connecting")
       assert html =~ "Receiving music…"
       assert html =~ "from Test iPhone"
       assert html =~ "Connecting to Test iPhone…"
@@ -85,12 +85,20 @@ defmodule JukeboxWeb.JukeboxLiveTest do
       play_track(Catalog.track(0))
       {:ok, view, html} = live(conn, ~p"/")
 
-      assert has_element?(view, "#screen-playing")
+      assert has_element?(view, "#jukebox .screen--playing")
       assert html =~ "Neon Milkshake"
       assert html =~ "The Velvet Comets"
       assert html =~ "Saturday Chrome"
-      assert has_element?(view, "#art-demo-1 img[src='/images/demo-artwork-1.svg']")
-      assert has_element?(view, "#art-demo-1[phx-hook=ArtworkPalette][data-palette-key=demo-1]")
+
+      assert has_element?(
+               view,
+               "#jukebox .np__art[data-palette-key=demo-1] img[src='/images/demo-artwork-1.svg']"
+             )
+
+      assert has_element?(
+               view,
+               "#jukebox .np__art[phx-hook=ArtworkPalette][data-palette-key=demo-1]"
+             )
 
       assert has_element?(
                view,
@@ -180,18 +188,18 @@ defmodule JukeboxWeb.JukeboxLiveTest do
   describe "live updates and restoration" do
     test "receives PubSub updates after mount", %{conn: conn} do
       {:ok, view, _} = live(conn, ~p"/")
-      assert has_element?(view, "#screen-idle")
+      assert has_element?(view, "#jukebox .screen--idle")
 
       notify([{:session_started, %{source_name: "Late iPhone"}}])
-      assert has_element?(view, "#screen-connecting")
+      assert has_element?(view, "#jukebox .screen--connecting")
 
       play_track(Catalog.track(3))
       assert has_element?(view, ".np__title", "Sunroof Confessions (Live at the Drive-In)")
       refute has_element?(view, ".np__album")
 
       play_track(Catalog.track(0))
-      assert has_element?(view, "#art-demo-1")
-      refute has_element?(view, "#art-demo-4")
+      assert has_element?(view, "#jukebox .np__art[data-palette-key=demo-1]")
+      refute has_element?(view, "#jukebox .np__art[data-palette-key=demo-4]")
     end
 
     test "a fresh mount restores the authoritative state (browser refresh during playback)", %{
@@ -202,6 +210,75 @@ defmodule JukeboxWeb.JukeboxLiveTest do
       {:ok, second, _} = live(conn, ~p"/")
       assert has_element?(second, ".np__title", "Static Bloom")
       assert has_element?(second, "#jukebox[data-mode=now_playing]")
+    end
+  end
+
+  describe "elements that fade out" do
+    # LiveView keeps an element with phx-remove in the DOM while it fades. A
+    # new element rendered with the same id during that time is patched into
+    # the leaving one and then removed with it, which blanks the screen.
+    test "screens, artwork and track text never reuse a DOM id", %{conn: conn} do
+      {:ok, view, _} = live(conn, ~p"/")
+
+      ids = fn selector ->
+        view
+        |> render()
+        |> LazyHTML.from_fragment()
+        |> LazyHTML.query("#jukebox " <> selector)
+        |> LazyHTML.attribute("id")
+      end
+
+      snapshot = fn -> {ids.(".screen"), ids.(".np__art"), ids.(".np__meta")} end
+
+      idle = snapshot.()
+      play_track(Catalog.track(0))
+      first = snapshot.()
+      play_track(Catalog.track(1))
+      second = snapshot.()
+      play_track(Catalog.track(0))
+      first_again = snapshot.()
+      reset_world()
+      idle_again = snapshot.()
+      play_track(Catalog.track(0))
+      restarted = snapshot.()
+
+      history = [idle, first, second, first_again, idle_again, restarted]
+      screens = history |> Enum.map(&elem(&1, 0)) |> Enum.dedup()
+      artworks = history |> Enum.flat_map(&elem(&1, 1))
+      texts = history |> Enum.flat_map(&elem(&1, 2))
+
+      # idle -> playing -> idle -> playing: four screens, four distinct ids
+      assert [[_], [_], [_], [_]] = screens
+      assert screens == Enum.uniq(screens)
+      # the same track and cover shown three times get three distinct ids
+      assert length(artworks) == 4 and artworks == Enum.uniq(artworks)
+      assert length(texts) == 4 and texts == Enum.uniq(texts)
+    end
+
+    test "the same song re-announced under another id does not replay the track change", %{
+      conn: conn
+    } do
+      {:ok, view, _} = live(conn, ~p"/")
+
+      notify([
+        {:session_started, %{source_name: "Test iPhone"}},
+        {:metadata_changed, %{track_id: "provisional", title: "Thunderstruck", artist: "AC/DC"}},
+        {:artwork_changed, Artwork.demo(2)}
+      ])
+
+      meta_id = view |> element("#jukebox .np__meta") |> render() |> LazyHTML.from_fragment()
+      meta_id = LazyHTML.attribute(meta_id, "id")
+
+      notify([
+        {:metadata_changed,
+         %{track_id: "final", title: "Thunderstruck", artist: "AC/DC", album: "The Razors Edge"}}
+      ])
+
+      assert has_element?(view, "#jukebox .np__album", "The Razors Edge")
+      assert has_element?(view, "#jukebox .np__art[data-palette-key=demo-2]")
+
+      same = view |> element("#jukebox .np__meta") |> render() |> LazyHTML.from_fragment()
+      assert LazyHTML.attribute(same, "id") == meta_id
     end
   end
 
@@ -246,7 +323,7 @@ defmodule JukeboxWeb.JukeboxLiveTest do
 
       render_hook(view, "dev_command", %{"command" => "connect"})
       Server.sync()
-      assert has_element?(view, "#screen-playing")
+      assert has_element?(view, "#jukebox .screen--playing")
 
       render_hook(view, "dev_command", %{"command" => "next_track"})
       assert RemoteControls.Demo.last_command() == :next_track
