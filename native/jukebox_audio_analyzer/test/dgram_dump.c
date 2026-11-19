@@ -3,9 +3,13 @@
  * Binds a Unix datagram socket and prints every datagram it receives, one
  * per line.
  *
- *   dgram_dump --socket PATH [--idle-ms N] [--hold-ms N]
+ *   dgram_dump --socket PATH [--first-ms N] [--idle-ms N] [--hold-ms N]
  *
- *   --idle-ms N   stop after N milliseconds without a datagram (default 1000)
+ *   --first-ms N  give up after N milliseconds without a first datagram
+ *                 (default 30000: a sender may take a while to start on a
+ *                 small machine)
+ *   --idle-ms N   once datagrams have arrived, stop after N milliseconds
+ *                 without another one (default 1000)
  *   --hold-ms N   bind, then read nothing for N milliseconds: a receiver that
  *                 is present but not keeping up
  */
@@ -22,11 +26,13 @@
 
 int main(int argc, char **argv) {
   const char *path = NULL;
+  int first_ms = 30000;
   int idle_ms = 1000;
   int hold_ms = 0;
 
   for (int i = 1; i + 1 < argc; i += 2) {
     if (strcmp(argv[i], "--socket") == 0) path = argv[i + 1];
+    else if (strcmp(argv[i], "--first-ms") == 0) first_ms = atoi(argv[i + 1]);
     else if (strcmp(argv[i], "--idle-ms") == 0) idle_ms = atoi(argv[i + 1]);
     else if (strcmp(argv[i], "--hold-ms") == 0) hold_ms = atoi(argv[i + 1]);
   }
@@ -57,11 +63,13 @@ int main(int argc, char **argv) {
   } else {
     char buffer[2048];
     struct pollfd watched = {fd, POLLIN, 0};
-    while (poll(&watched, 1, idle_ms) > 0) {
+    int timeout_ms = first_ms;
+    while (poll(&watched, 1, timeout_ms) > 0) {
       ssize_t n = recv(fd, buffer, sizeof(buffer) - 1, 0);
       if (n < 0) break;
       buffer[n] = '\0';
       puts(buffer);
+      timeout_ms = idle_ms;
     }
     fflush(stdout);
   }

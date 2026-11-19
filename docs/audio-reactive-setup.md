@@ -99,8 +99,10 @@ make test
 ```
 
 `make test` needs no audio hardware: it generates test signals, runs them
-through the analyser and ends with a line such as `55 passed`. Do not go
-further if a test fails; the output names the check that failed.
+through the analyser and ends with a line such as `55 passed`. On a Pi 2 it
+takes a few minutes, most of them in "the socket" section, which analyses ten
+minutes of audio in one go. Do not go further if a test fails; the output
+names the check that failed.
 
 ```sh
 build/jukebox_audio_analyzer --version

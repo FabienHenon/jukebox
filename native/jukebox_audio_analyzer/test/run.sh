@@ -52,6 +52,11 @@ lines() {
   wc -l < "$1" | tr -d ' '
 }
 
+# Seconds since the epoch.
+now() {
+  date +%s
+}
+
 # analyse OUTPUT-NAME GENERATOR-OPTIONS -- ANALYSER-OPTIONS
 analyse() {
   name="$1"
@@ -238,27 +243,41 @@ check "unknown or incomplete options are ignored, not fatal" "$(lines "$TMP/odd.
 echo "the socket"
 
 # Ten minutes of audio, nobody listening: 12000 frames that cannot be sent.
+# The analyser repeats a report after a minute of real time, and on a small
+# machine these ten minutes take longer than that to analyse: the number of
+# reports allowed follows from how long the run took.
+started="$(now)"
 "$GEN" --signal music --seconds 600 | "$ANALYZER" --socket "$NOWHERE" > "$TMP/unreachable.out" 2> "$TMP/unreachable.err"
 status=$?
-check "an unreachable socket never blocks the input (10 min of audio read, exit 0)" "$status" -eq 0
+elapsed=$(($(now) - started))
+reports="$(lines "$TMP/unreachable.err")"
+check "an unreachable socket never blocks the input (10 min of audio read in about $elapsed s, exit 0)" "$status" -eq 0
 check "nothing is written to standard output without --print" "$(lines "$TMP/unreachable.out")" -eq 0
-check "the problem is reported once, not 12000 times" "$(lines "$TMP/unreachable.err")" -eq 1
+check "the problem is reported once a minute at most, not 12000 times (got $reports in $elapsed s)" \
+  "$reports" -ge 1 -a "$reports" -le "$((1 + elapsed / 60))"
 
 "$GEN" --signal music --seconds 60 | "$ANALYZER" --socket "$TMP/this/path/is/far/too/long/$(printf '%0200d' 0).sock" --print > "$TMP/long.out" 2> "$TMP/long.err"
 check "a socket path that is too long does not stop the analysis" "$?" -eq 0 -a "$(lines "$TMP/long.out")" -ge 1190
 
 # A receiver that exists but does not read: its buffer fills, frames are dropped.
-"$DUMP" --socket "$TMP/held.sock" --hold-ms 4000 2> /dev/null &
+# It stays there, silent, for the whole run and is stopped afterwards.
+"$DUMP" --socket "$TMP/held.sock" --hold-ms 3600000 2> /dev/null &
 held=$!
 wait_for_socket "$TMP/held.sock"
-"$GEN" --signal music --seconds 600 | "$ANALYZER" --socket "$TMP/held.sock" 2> "$TMP/held.err"
+started="$(now)"
+"$GEN" --signal music --seconds 120 | "$ANALYZER" --socket "$TMP/held.sock" 2> "$TMP/held.err"
 status=$?
+elapsed=$(($(now) - started))
+reports="$(lines "$TMP/held.err")"
 kill "$held" 2> /dev/null
 wait "$held" 2> /dev/null
 check "a receiver that does not read never blocks the input" "$status" -eq 0
-check "dropped frames are reported at most once" "$(lines "$TMP/held.err")" -le 1
+check "dropped frames are reported once a minute at most (got $reports in $elapsed s)" \
+  "$reports" -le "$((1 + elapsed / 60))"
 
 # A receiver that reads: frames arrive, each one valid and one that was sent.
+# (The receiver waits as long as it takes for the first frame, then stops
+# 700 ms after the last one.)
 "$DUMP" --socket "$TMP/live.sock" --idle-ms 700 > "$TMP/received.out" 2> /dev/null &
 live=$!
 wait_for_socket "$TMP/live.sock"
@@ -270,10 +289,25 @@ check "each datagram is one valid frame" "$(grep -c -v -E "$FRAME" "$TMP/receive
 check "each datagram is a frame that was sent" "$(grep -c -v -x -F -f "$TMP/sent.out" "$TMP/received.out")" -eq 0
 
 # The receiver appears while the analyser is already running (Phoenix restarted).
-( sleep 0.5; exec "$DUMP" --socket "$TMP/late.sock" --idle-ms 1200 > "$TMP/late.out" 2> /dev/null ) &
+# The audio goes through a named pipe so that the steps happen in a known
+# order whatever the speed of the machine: two seconds of audio with nobody
+# listening, then the receiver, then two more seconds.
+mkfifo "$TMP/late.pcm"
+"$ANALYZER" --socket "$TMP/late.sock" < "$TMP/late.pcm" 2> "$TMP/late.err" &
+analyser=$!
+exec 9> "$TMP/late.pcm"
+"$GEN" --signal music --seconds 2 >&9
+# The generator has returned, so at most one pipe buffer (a fraction of a
+# second of audio) is still to be analysed.
+sleep 1
+# (9>&-: the receiver must not hold the pipe open, or the analyser would
+# never see the end of the audio.)
+"$DUMP" --socket "$TMP/late.sock" --idle-ms 700 > "$TMP/late.out" 2> /dev/null 9>&- &
 late=$!
-{ "$GEN" --signal music --seconds 2; sleep 1.2; "$GEN" --signal music --seconds 2; } |
-  "$ANALYZER" --socket "$TMP/late.sock" 2> "$TMP/late.err"
+wait_for_socket "$TMP/late.sock"
+"$GEN" --signal music --seconds 2 >&9
+exec 9>&-
+wait "$analyser"
 wait "$late"
 check "a socket that appears later is found without restarting the analyser" "$(lines "$TMP/late.out")" -ge 1
 check "the earlier failure was reported once" "$(lines "$TMP/late.err")" -eq 1
