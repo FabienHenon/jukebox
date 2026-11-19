@@ -20,7 +20,7 @@
 //                               pauses without it)
 //   data-beat="0|1"             flips on every beat to replay the lamp flash
 //   data-audio                  present while audio values are being shown
-//   --audio-level, --audio-bass, --audio-onset, --audio-beat, --audio-mix
+//   --audio-level, --audio-bass, --audio-mix
 //                               0..1, smoothed here (see audio/controller.mjs)
 //   --audio-bpm                 the detected tempo while it is trusted
 //   --beat-live                 length of one detected beat while it is trusted
@@ -67,8 +67,6 @@ const TEMPO_STEP = 0.03
 const AUDIO_PROPERTIES = [
   ["--audio-level", "level"],
   ["--audio-bass", "bass"],
-  ["--audio-onset", "onset"],
-  ["--audio-beat", "beat"],
   ["--audio-mix", "mix"],
 ]
 

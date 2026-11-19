@@ -81,7 +81,6 @@ defmodule JukeboxWeb.JukeboxComponents do
       <.marquee wave={@view.mode != :now_playing} />
       <.pillar side="left" />
       <section class="jb-screen" aria-label="Jukebox display">
-        <div class="jb-pulse" aria-hidden="true"></div>
         {render_slot(@inner_block)}
       </section>
       <.pillar side="right" />

@@ -148,9 +148,8 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
   (`aria-hidden`) either way.
 - **Audio-reactive animation (optional).** With audio analysis enabled the
   display follows the music actually being played: the waves rise with the
-  loudness, the cover and a glow behind it pulse with the bass, the bulbs dim
-  in quiet passages and the `chase` / `party` lights step on the detected
-  beat. The pipeline is `Shairport Sync → ALSA "file" plugin → native analyser
+  loudness, the cover pulses with the bass, the bulbs dim in quiet passages
+  and the `chase` / `party` lights step on the detected beat. The pipeline is `Shairport Sync → ALSA "file" plugin → native analyser
   → Unix datagrams → Jukebox.AudioAnalysis.NativeSource → PubSub → LiveView
   push_event → JukeboxLights hook`. Three rules shaped it: the analysis runs
   outside the browser (Chromium is already the heaviest process on the Pi)
@@ -158,9 +157,8 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
   analyser drops frames nobody reads and never waits); and a frame never
   touches the LiveView assigns, so 20 frames a second cost 20 small events
   and no render. The hook keeps targets and shown values apart, smooths them
-  per animation frame and writes five custom properties on `<html>`
-  (`--audio-level`, `--audio-bass`, `--audio-onset`, `--audio-beat`,
-  `--audio-mix`) that the CSS turns into transforms and opacities. Without
+  per animation frame and writes three custom properties on `<html>`
+  (`--audio-level`, `--audio-bass`, `--audio-mix`) that the CSS turns into transforms and opacities. Without
   frames for half a second, or below the confidence threshold, the fixed
   tempo takes over again, on the same step counter, so nothing jumps. See
   [docs/audio-reactive-setup.md](docs/audio-reactive-setup.md); the ALSA side

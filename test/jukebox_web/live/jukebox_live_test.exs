@@ -355,7 +355,7 @@ defmodule JukeboxWeb.JukeboxLiveTest do
       refute_push_event(view, "audio-frame", %{}, 50)
     end
 
-    test "enabled: the hook gets its tuning values and the glow layer is there", %{conn: conn} do
+    test "enabled: the hook gets its tuning values", %{conn: conn} do
       enable_audio(visual_delay_ms: 90, beat_confidence_threshold: 0.6)
       play_track(Catalog.track(0))
       {:ok, view, _} = live(conn, ~p"/")
@@ -364,8 +364,6 @@ defmodule JukeboxWeb.JukeboxLiveTest do
                view,
                "#jukebox-body[data-audio=true][data-audio-delay-ms='90'][data-audio-threshold='0.6']"
              )
-
-      assert has_element?(view, "#jukebox-body .jb-screen .jb-pulse[aria-hidden=true]")
     end
 
     test "each frame becomes one browser event and never a render", %{conn: conn} do

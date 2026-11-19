@@ -1092,8 +1092,6 @@ html:not([data-lights-live]) .jb-grille__wave {
 
      --audio-level   loudness
      --audio-bass    low-frequency energy
-     --audio-onset   a musical attack: jumps up, decays quickly
-     --audio-beat    one pulse per trusted detected beat
      --audio-mix     how much the audio drives the picture; fades in and out
                      so nothing jumps when frames start or stop
 
@@ -1103,25 +1101,8 @@ html:not([data-lights-live]) .jb-grille__wave {
    properties are removed and the page is exactly what it was.
    -------------------------------------------------------------------------- */
 
-/* A soft glow in the artwork's accent colour behind the screen content: it
-   brightens with the music, flashes on attacks and beats and swells with the
-   bass. The gradient is painted once; the layer only fades and scales. */
-.jb-pulse {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(60% 76% at 30% 56%, var(--accent, var(--rose)) 0%, transparent 74%);
-  opacity: 0;
-}
-
-html[data-audio] .jb-pulse {
-  will-change: opacity, transform;
-  opacity: calc(
-    var(--audio-mix, 0) *
-      (var(--audio-level, 0) * 0.14 + var(--audio-onset, 0) * 0.14 + var(--audio-beat, 0) * 0.12)
-  );
-  transform: scale(calc(0.94 + var(--audio-bass, 0) * 0.1));
-}
+/* The screen background (.jb-screen and its glow) deliberately stays still:
+   only the cover, the waves and the lights follow the music. */
 
 /* The cover and its plates breathe with the bass. */
 html[data-audio] .np__art-slot {

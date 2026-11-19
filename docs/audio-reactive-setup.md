@@ -1,8 +1,8 @@
 # Audio-reactive animation: Raspberry Pi setup
 
 This guide makes the jukebox display follow the music that Shairport Sync is
-playing: waves that rise with the loudness, a glow and a cover that pulse with
-the bass, lights that step on the detected beat.
+playing: waves that rise with the loudness, a cover that pulses with the bass,
+lights that step on the detected beat.
 
 **Status: nothing in this guide has been run on a Raspberry Pi yet.** The
 application, the browser code and the native analyser are tested on a
@@ -272,7 +272,7 @@ Play music from the iPhone. On the kiosk, with the animation style on `chase`
 (the default; the animation button cycles the styles):
 
 - the waves under the track title rise and fall with the loudness;
-- the cover swells slightly on bass hits and a glow pulses behind it;
+- the cover swells slightly on bass hits (the screen background stays still);
 - the bulb rows are dimmer in quiet passages;
 - on music with a clear beat the lamps step on that beat instead of the
   steady 120 BPM.
@@ -444,7 +444,7 @@ The feature is validated on the Raspberry Pi only when every line passes.
 | 1 | Direct DAC playback still works | Second `speaker-test` of step 5; or roll back and AirPlay |
 | 2 | AirPlay plays through `jukebox_tap` | Step 7: sound, and `pgrep -af jukebox_audio_analyzer` shows the process |
 | 3 | Loudness drives the animation | Waves and bulb brightness follow quiet and loud passages |
-| 4 | Bass pulses look natural | Cover and glow move on bass hits, not constantly |
+| 4 | Bass pulses look natural | The cover moves on bass hits, not constantly |
 | 5 | Beats are followed on music with a clear beat | Lamps step with the music; `last_frame` shows a plausible `bpm` and `confidence` above the threshold |
 | 6 | Quiet or free-tempo music falls back | Lamps keep the steady fixed tempo; waves still follow the loudness |
 | 7 | One hour of uninterrupted audio | Play an hour; no click or dropout by ear |
