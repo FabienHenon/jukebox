@@ -37,6 +37,18 @@ if config_env() == :prod do
     end
   end
 
+  float_env = fn name, default, min, max ->
+    raw = env.(name, Float.to_string(default))
+
+    case Float.parse(raw) do
+      {value, ""} when value >= min and value <= max ->
+        value
+
+      _ ->
+        raise "environment variable #{name} must be a number between #{min} and #{max}, got: #{inspect(raw)}"
+    end
+  end
+
   bool_env = fn name, default ->
     case String.downcase(env.(name, default)) do
       v when v in ["1", "true", "yes", "on"] -> true
@@ -113,6 +125,34 @@ if config_env() == :prod do
     # directory (StateDirectory=jukebox); if it cannot be written the style is
     # simply not kept across restarts.
     state_file: Path.join(env.("JUKEBOX_STATE_DIR", "/var/lib/jukebox"), "animation_style")
+
+  # Audio-reactive animation (docs/audio-reactive-setup.md). Off unless asked
+  # for, and never a reason not to boot: the native source keeps retrying on
+  # its own when its socket cannot be created or the analyser is not running.
+  audio_enabled = bool_env.("AUDIO_REACTIVE_ENABLED", "false")
+  audio_source = env.("AUDIO_REACTIVE_SOURCE", "native")
+
+  unless audio_source in ["disabled", "simulated", "native"] do
+    raise "environment variable AUDIO_REACTIVE_SOURCE must be \"disabled\", \"simulated\" or \"native\", got: #{inspect(audio_source)}"
+  end
+
+  config :jukebox, Jukebox.AudioAnalysis,
+    publish_rate: int_env.("AUDIO_ANALYSIS_PUBLISH_RATE", 20, 1, 20),
+    visual_delay_ms: int_env.("AUDIO_VISUAL_DELAY_MS", 120, 0, 1_000),
+    beat_confidence_threshold: float_env.("AUDIO_BEAT_CONFIDENCE_THRESHOLD", 0.45, 0.0, 1.0)
+
+  audio_socket = env.("AUDIO_ANALYSIS_SOCKET", "/run/jukebox/audio-analysis.sock")
+
+  case {audio_enabled, audio_source} do
+    {true, "native"} ->
+      config :jukebox, :audio_source, {Jukebox.AudioAnalysis.NativeSource, socket: audio_socket}
+
+    {true, "simulated"} ->
+      config :jukebox, :audio_source, {Jukebox.AudioAnalysis.SimulatedSource, []}
+
+    _disabled ->
+      config :jukebox, :audio_source, {Jukebox.AudioAnalysis.DisabledSource, []}
+  end
 
   case metadata_adapter do
     "mqtt" ->

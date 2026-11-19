@@ -137,7 +137,13 @@ sudo chmod 600 /etc/jukebox/jukebox.env
 | `JUKEBOX_COALESCE_MS` | `150` | how long a burst of metadata messages is buffered before the screen updates once (0 disables) |
 | `JUKEBOX_ANIMATION_STYLE` | `chase` | animation style until the animation button has chosen another: `calm`, `waves`, `chase` or `party`. The last choice is saved and wins at the next boot |
 | `JUKEBOX_STATE_DIR` | `/var/lib/jukebox` | where the last chosen animation style is saved (file `animation_style`). The unit creates it with `StateDirectory=jukebox`; delete the file to return to `JUKEBOX_ANIMATION_STYLE` |
-| `JUKEBOX_ANIMATION_BPM` | `120` | tempo of the `chase` and `party` lights, 40 to 240 (a fixed pace: the audio is not analysed) |
+| `JUKEBOX_ANIMATION_BPM` | `120` | tempo of the `chase` and `party` lights, 40 to 240, when the audio is not analysed or the beat is not clear |
+| `AUDIO_REACTIVE_ENABLED` | `false` | follow the music being played; needs the ALSA tap and the native analyser, see [audio-reactive-setup.md](audio-reactive-setup.md) |
+| `AUDIO_REACTIVE_SOURCE` | `native` | `native`, `simulated` (made-up music) or `disabled` |
+| `AUDIO_ANALYSIS_SOCKET` | `/run/jukebox/audio-analysis.sock` | Unix datagram socket the analyser sends to |
+| `AUDIO_ANALYSIS_PUBLISH_RATE` | `20` | most analysis frames per second sent to the browser, 1 to 20 |
+| `AUDIO_VISUAL_DELAY_MS` | `120` | how long the browser holds a frame before showing it, 0 to 1000 (the env template sets 0; see "Calibrating" in the audio guide) |
+| `AUDIO_BEAT_CONFIDENCE_THRESHOLD` | `0.45` | beat-tracking confidence, 0 to 1, below which the fixed tempo drives the lights |
 
 Invalid local values (a non-numeric port, an unknown adapter name) fail fast
 at boot with a readable message. Unreachable services do not.
@@ -229,6 +235,14 @@ dtoverlay=gpio-shutdown,gpio_pin=3,active_low=1,gpio_pull=up
 Shorting GPIO 3 to ground powers the Pi on from halt and triggers a clean
 shutdown while running. The application never touches this button.
 
+## Audio-reactive animation (optional)
+
+The display can follow the music actually being played (loudness, bass,
+beats). It needs an ALSA tap in front of the DAC and a small native analyser,
+and it is off by default. Set it up only once everything above works, with
+[audio-reactive-setup.md](audio-reactive-setup.md); that guide also gives the
+one command that returns Shairport Sync to direct DAC output.
+
 ## 8. Troubleshooting
 
 | Symptom | Where to look |
@@ -253,4 +267,7 @@ Raspberry Pi with real hardware:
 - GPIO button input (no adapter shipped yet);
 - audio output through the DAC;
 - boot automation, screen blanking and Chromium kiosk behaviour;
+- the audio-reactive animation beyond the application itself: the ALSA tap,
+  the native analyser on ARMv7 and the timing of the lights against the sound
+  (see the checklist in [audio-reactive-setup.md](audio-reactive-setup.md));
 - the power button overlay and clean shutdown.

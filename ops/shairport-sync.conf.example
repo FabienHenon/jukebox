@@ -28,6 +28,17 @@ general = {
 alsa = {
   output_device = "hw:0";         // list devices with `aplay -l`; e.g. "hw:CARD=sndrpihifiberry"
   // mixer_control_name = "Digital"; // optional hardware mixer of the DAC
+
+  // Audio-reactive animation (docs/audio-reactive-setup.md). Only after the
+  // "jukebox_tap" ALSA device is installed and tested, replace the
+  // output_device line above with the first one below and add the others:
+  //
+  // output_device = "jukebox_tap"; // the DAC, plus a copy of the audio for the display
+  // output_format = "S16";         // what the analyser is tested with; half the data of S32
+  // buffer_size = 8820;            // frames (0.2 s). REQUIRED with the tap: ALSA otherwise
+  //                                // picks the largest buffer the DAC offers, and the tap
+  //                                // hands samples to the analyser one buffer late.
+  // mixer_device = "hw:CARD=Audio"; // only if you use mixer_control_name: the tap is not a mixer
 };
 
 metadata = {

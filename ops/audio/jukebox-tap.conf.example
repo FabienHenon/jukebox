@@ -1,0 +1,33 @@
+# ALSA device "jukebox_tap": plays to the USB DAC and pipes a copy of the
+# audio to the jukebox's analyser.
+#
+# Install as /etc/alsa/conf.d/60-jukebox-tap.conf (ops/audio/install-audio-tap.sh
+# does it, or see docs/audio-reactive-setup.md). It is a file of its own on
+# purpose: /etc/asound.conf is never touched, and removing this file removes
+# the device.
+#
+# How it works: the ALSA "file" plugin forwards everything it is given to its
+# slave (the real DAC, unchanged) and writes the same samples, raw, to the
+# standard input of a command. ALSA fills in the stream format:
+#
+#   %r  sample rate      %c  channels
+#   %b  bits per sample  %f  sample format (S16_LE, ...)
+#
+# The command is the small wrapper jukebox_audio_tap, not the analyser
+# itself: it keeps reading the audio even if the analyser is missing or
+# crashes, so a problem with the analysis never stalls playback.
+#
+# Change the slave if your DAC has another name (list them with: aplay -L).
+# Keep --publish-rate equal to AUDIO_ANALYSIS_PUBLISH_RATE in
+# /etc/jukebox/jukebox.env.
+
+pcm.jukebox_tap {
+    type file
+    slave.pcm "plughw:CARD=Audio,DEV=0"
+    file "|/opt/jukebox/bin/jukebox_audio_tap --sample-rate %r --channels %c --bits %b --format %f --socket /run/jukebox/audio-analysis.sock --publish-rate 20"
+    format "raw"
+    hint {
+        show on
+        description "Jukebox: USB DAC with a copy of the audio for the display"
+    }
+}

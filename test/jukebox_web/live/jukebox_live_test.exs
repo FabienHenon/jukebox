@@ -5,7 +5,8 @@ defmodule JukeboxWeb.JukeboxLiveTest do
 
   import Phoenix.LiveViewTest
 
-  alias Jukebox.{Animation, Commands}
+  alias Jukebox.{Animation, AudioAnalysis, Commands}
+  alias Jukebox.AudioAnalysis.{Frame, SimulatedSource}
   alias Jukebox.Demo.Catalog
   alias Jukebox.MetadataSources.Demo
   alias Jukebox.Playback.{Artwork, Server}
@@ -314,6 +315,116 @@ defmodule JukeboxWeb.JukeboxLiveTest do
       assert has_element?(view, ".jb-feedback")
       Process.sleep(1_000)
       refute has_element?(view, ".jb-feedback")
+    end
+  end
+
+  describe "audio-reactive animation" do
+    defp enable_audio(settings \\ []) do
+      previous_source = Application.fetch_env!(:jukebox, :audio_source)
+      previous_settings = Application.get_env(:jukebox, AudioAnalysis, [])
+
+      on_exit(fn ->
+        Application.put_env(:jukebox, :audio_source, previous_source)
+        Application.put_env(:jukebox, AudioAnalysis, previous_settings)
+      end)
+
+      # The source process is not needed: the tests publish frames themselves.
+      Application.put_env(:jukebox, :audio_source, {SimulatedSource, []})
+      Application.put_env(:jukebox, AudioAnalysis, Keyword.merge(previous_settings, settings))
+    end
+
+    defp frame(overrides \\ %{}) do
+      {:ok, frame} =
+        %{level: 0.4204, bass: 0.71, onset: 0.83, beat_id: 127, bpm: 118.44, confidence: 0.76}
+        |> Map.merge(overrides)
+        |> Frame.new()
+
+      frame
+    end
+
+    test "disabled (the default): the frame says so and frames are ignored", %{conn: conn} do
+      play_track(Catalog.track(0))
+      {:ok, view, _} = live(conn, ~p"/")
+
+      assert has_element?(view, "#jukebox-body[data-audio=false]")
+      refute has_element?(view, "#jukebox-body[data-audio-delay-ms]")
+      refute has_element?(view, "#jukebox-body[data-audio-threshold]")
+
+      # Not subscribed: even a published frame never reaches the browser.
+      AudioAnalysis.publish(frame())
+      refute_push_event(view, "audio-frame", %{}, 50)
+    end
+
+    test "enabled: the hook gets its tuning values and the glow layer is there", %{conn: conn} do
+      enable_audio(visual_delay_ms: 90, beat_confidence_threshold: 0.6)
+      play_track(Catalog.track(0))
+      {:ok, view, _} = live(conn, ~p"/")
+
+      assert has_element?(
+               view,
+               "#jukebox-body[data-audio=true][data-audio-delay-ms='90'][data-audio-threshold='0.6']"
+             )
+
+      assert has_element?(view, "#jukebox-body .jb-screen .jb-pulse[aria-hidden=true]")
+    end
+
+    test "each frame becomes one browser event and never a render", %{conn: conn} do
+      enable_audio()
+      play_track(Catalog.track(0))
+      {:ok, view, _} = live(conn, ~p"/")
+      before = render(view)
+
+      AudioAnalysis.publish(frame())
+
+      assert_push_event(view, "audio-frame", %{
+        level: 0.42,
+        bass: 0.71,
+        onset: 0.83,
+        beat_id: 127,
+        bpm: 118.4,
+        confidence: 0.76
+      })
+
+      for beat <- 128..150, do: AudioAnalysis.publish(frame(%{beat_id: beat, bpm: nil}))
+      assert_push_event(view, "audio-frame", %{beat_id: 150, bpm: nil})
+
+      # Nothing about the page changed: the frames only travelled as events.
+      assert render(view) == before
+    end
+
+    test "frames are not forwarded when nothing should follow them", %{conn: conn} do
+      enable_audio()
+      {:ok, view, _} = live(conn, ~p"/")
+
+      # Idle screen.
+      assert has_element?(view, "#jukebox-body[data-audio=false]")
+      AudioAnalysis.publish(frame())
+      refute_push_event(view, "audio-frame", %{}, 50)
+
+      # A track is showing: followed, paused or not.
+      play_track(Catalog.track(0), [{:playback_changed, :paused}])
+      assert has_element?(view, "#jukebox-body[data-audio=true]")
+      AudioAnalysis.publish(frame(%{beat_id: 1}))
+      assert_push_event(view, "audio-frame", %{beat_id: 1})
+
+      # The calm style has no motion at all.
+      Animation.set(:calm)
+      assert has_element?(view, "#jukebox-body[data-audio=false]")
+      AudioAnalysis.publish(frame(%{beat_id: 2}))
+      refute_push_event(view, "audio-frame", %{beat_id: 2}, 50)
+
+      Animation.set(:party)
+      assert has_element?(view, "#jukebox-body[data-audio=true][data-lights=party]")
+      AudioAnalysis.publish(frame(%{beat_id: 3}))
+      assert_push_event(view, "audio-frame", %{beat_id: 3})
+    end
+
+    test "the static render does not subscribe", %{conn: conn} do
+      enable_audio()
+      play_track(Catalog.track(0))
+      html = conn |> get(~p"/") |> html_response(200)
+      assert html =~ ~s(data-audio="true")
+      assert Registry.count_match(Jukebox.PubSub, AudioAnalysis.topic(), :_) == 0
     end
   end
 

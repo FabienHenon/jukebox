@@ -62,6 +62,10 @@ config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, tick_ms: 1_000
 config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
 config :jukebox, :input, {Jukebox.Inputs.Fake, debounce_ms: 80}
 
+# A fake analyser, so the audio-reactive animation can be worked on without
+# ALSA. The simulator page switches it between its profiles.
+config :jukebox, :audio_source, {Jukebox.AudioAnalysis.SimulatedSource, []}
+
 # Keep the chosen animation style across server restarts, as the Pi does.
 # The project's tmp/ directory is ignored by git.
 config :jukebox, Jukebox.Animation, state_file: Path.expand("../tmp/animation_style", __DIR__)

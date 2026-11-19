@@ -6,6 +6,7 @@ defmodule JukeboxWeb.SimulatorLiveTest do
   import Phoenix.LiveViewTest
 
   alias Jukebox.Animation
+  alias Jukebox.AudioAnalysis.SimulatedSource
   alias Jukebox.MetadataSources.Demo
   alias Jukebox.Playback.Server
   alias Jukebox.RemoteControls
@@ -104,6 +105,41 @@ defmodule JukeboxWeb.SimulatorLiveTest do
     view |> element("button", "Reset everything") |> render_click()
     assert Animation.get() == :chase
     assert has_element?(view, "#animation-styles .is-active[data-style=chase]")
+  end
+
+  test "without the simulated analyser the audio card only names the source", %{conn: conn} do
+    {:ok, view, _} = live_isolated(conn, JukeboxWeb.SimulatorLive)
+    assert has_element?(view, "#audio-card #audio-source code", "disabled")
+    refute has_element?(view, "#audio-profiles")
+  end
+
+  test "the audio card drives the simulated analyser", %{conn: conn} do
+    start_supervised!({SimulatedSource, tick_ms: nil})
+    {:ok, view, _} = live_isolated(conn, JukeboxWeb.SimulatorLive)
+
+    assert has_element?(view, "#audio-profile-steady.is-active")
+    assert has_element?(view, "#audio-bpm-112.is-active")
+
+    view |> element("#audio-profile-free_tempo") |> render_click()
+    assert %{profile: :free_tempo} = SimulatedSource.snapshot()
+    assert has_element?(view, "#audio-profile-free_tempo.is-active")
+    refute has_element?(view, "#audio-profile-steady.is-active")
+
+    view |> element("#audio-profile-down") |> render_click()
+    assert %{profile: :down} = SimulatedSource.snapshot()
+
+    view |> element("#audio-bpm-150") |> render_click()
+    assert %{bpm: 150} = SimulatedSource.snapshot()
+    assert has_element?(view, "#audio-bpm-150.is-active")
+
+    # Values the page never offers are ignored.
+    render_hook(view, "audio_profile", %{"profile" => "disco"})
+    render_hook(view, "audio_bpm", %{"bpm" => "9000"})
+    assert %{profile: :down, bpm: 150} = SimulatedSource.snapshot()
+
+    view |> element("button", "Reset everything") |> render_click()
+    assert %{profile: :steady, bpm: 112, index: 0} = SimulatedSource.snapshot()
+    assert has_element?(view, "#audio-profile-steady.is-active")
   end
 
   test "edge-case presets and preview sizes", %{conn: conn} do

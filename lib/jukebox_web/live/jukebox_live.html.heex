@@ -8,7 +8,7 @@
     data-ready={to_string(@ready?)}
     phx-hook={if @dev_keys?, do: "DevelopmentKeys"}
   >
-    <.jukebox_frame view={@view} animation={@animation} beat_ms={@beat_ms}>
+    <.jukebox_frame view={@view} animation={@animation} beat_ms={@beat_ms} audio={@audio}>
       <%= case @view.mode do %>
         <% :idle -> %>
           <.idle_screen view={@view} gen={@gen} />

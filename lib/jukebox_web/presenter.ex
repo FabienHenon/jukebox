@@ -95,6 +95,14 @@ defmodule JukeboxWeb.Presenter do
   @spec beating?(t()) :: boolean()
   def beating?(%__MODULE__{} = view), do: view.playback == :playing and view.session == :active
 
+  @doc """
+  Whether the display should follow the analysed audio: only while a track is
+  showing, and never in the `:calm` style, which is the one without motion.
+  """
+  @spec audio_reactive?(t(), Animation.style()) :: boolean()
+  def audio_reactive?(%__MODULE__{mode: :now_playing}, style), do: style != :calm
+  def audio_reactive?(%__MODULE__{}, _style), do: false
+
   @doc "Display name of an animation style."
   @spec animation_label(Animation.style()) :: String.t()
   def animation_label(:calm), do: "Calm"

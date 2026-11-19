@@ -36,10 +36,23 @@ config :jukebox, JukeboxWeb.Endpoint,
 config :jukebox, Jukebox.Playback, idle_timeout_ms: 5_000, coalesce_ms: 150
 
 # Kiosk animation style: the one used until the animation button has chosen
-# another (`:calm`, `:waves`, `:chase` or `:party`), the tempo of the
-# beat-driven styles (fixed: the application never reads audio) and the file
-# the last chosen style is saved to (`nil`: kept in memory only).
+# another (`:calm`, `:waves`, `:chase` or `:party`), the fixed tempo of the
+# beat-driven styles (used whenever no detected beat is available) and the
+# file the last chosen style is saved to (`nil`: kept in memory only).
 config :jukebox, Jukebox.Animation, default_style: :chase, bpm: 120, state_file: nil
+
+# Audio-reactive animation. The source is off by default: development uses the
+# simulated one and the Raspberry Pi the native analyser (see
+# docs/audio-reactive-setup.md). `publish_rate` caps the frames per second sent
+# to the browsers, `visual_delay_ms` is how long the browser holds a frame so
+# the picture lines up with the sound, and below `beat_confidence_threshold`
+# the detected beats are ignored in favour of the fixed tempo above.
+config :jukebox, :audio_source, {Jukebox.AudioAnalysis.DisabledSource, []}
+
+config :jukebox, Jukebox.AudioAnalysis,
+  publish_rate: 20,
+  visual_delay_ms: 120,
+  beat_confidence_threshold: 0.45
 
 # Default adapters: demo everywhere, replaced by Shairport adapters in prod.
 config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, []}

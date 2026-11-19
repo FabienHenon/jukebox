@@ -194,6 +194,19 @@ defmodule JukeboxWeb.PresenterTest do
       assert Presenter.lights(connecting, :chase) == :off
     end
 
+    test "the audio is followed on Now Playing, in every style but calm", %{playing: playing} do
+      view = Presenter.present(playing, @now)
+      assert Presenter.audio_reactive?(view, :waves)
+      assert Presenter.audio_reactive?(view, :chase)
+      assert Presenter.audio_reactive?(view, :party)
+      refute Presenter.audio_reactive?(view, :calm)
+
+      refute Presenter.audio_reactive?(Presenter.present(State.new(), @now), :party)
+
+      connecting = Presenter.present(State.new(session_status: :connecting), @now)
+      refute Presenter.audio_reactive?(connecting, :waves)
+    end
+
     test "the beat runs only while music is playing", %{playing: playing} do
       assert Presenter.beating?(Presenter.present(playing, @now))
       refute Presenter.beating?(Presenter.present(%{playing | playback_status: :paused}, @now))

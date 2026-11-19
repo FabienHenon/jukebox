@@ -1,7 +1,7 @@
 defmodule Jukebox.Integrations do
   @moduledoc """
   Supervisor for the external-integration adapters: remote control (when it
-  needs a process), metadata source and physical input.
+  needs a process), metadata source, physical input and audio-analysis source.
 
   It is started *after* the Phoenix endpoint so a slow or failing integration
   never delays the kiosk screen, and it has generous restart limits so a
@@ -23,7 +23,7 @@ defmodule Jukebox.Integrations do
 
   @doc "Child specs built from the configured adapters."
   def children do
-    [remote_control_child(), metadata_source_child(), input_child()]
+    [remote_control_child(), metadata_source_child(), input_child(), audio_source_child()]
     |> Enum.reject(&is_nil/1)
   end
 
@@ -34,6 +34,11 @@ defmodule Jukebox.Integrations do
 
   defp input_child do
     {module, opts} = Application.fetch_env!(:jukebox, :input)
+    module.child_spec(opts)
+  end
+
+  defp audio_source_child do
+    {module, opts} = Jukebox.AudioAnalysis.source()
     module.child_spec(opts)
   end
 

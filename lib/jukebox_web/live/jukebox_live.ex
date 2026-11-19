@@ -5,8 +5,14 @@ defmodule JukeboxWeb.JukeboxLive do
 
   On every mount the complete current state is loaded *before* rendering, and
   on connected mount the view subscribes to playback, animation style and
-  command feedback broadcasts. The socket never becomes the source of truth: a browser refresh
-  or a LiveView reconnect simply re-reads the OTP process.
+  command feedback broadcasts. The socket never becomes the source of truth: a
+  browser refresh or a LiveView reconnect simply re-reads the OTP process.
+
+  When audio analysis is enabled the connected view also subscribes to the
+  analysed frames (`Jukebox.AudioAnalysis`) and forwards each one to the
+  browser as an `audio-frame` event. Frames never touch the assigns, so they
+  never cause a render or a DOM patch; the `JukeboxLights` hook animates from
+  them on its own.
 
   Development keyboard shortcuts (`dev_keys` config, compile-time) route
   through `Jukebox.Commands`, the same path future GPIO buttons use.
@@ -16,7 +22,8 @@ defmodule JukeboxWeb.JukeboxLive do
 
   import JukeboxWeb.JukeboxComponents
 
-  alias Jukebox.{Animation, Commands, Playback}
+  alias Jukebox.{Animation, AudioAnalysis, Commands, Playback}
+  alias Jukebox.AudioAnalysis.Frame
   alias JukeboxWeb.Presenter
 
   @dev_keys Application.compile_env(:jukebox, :dev_keys, false)
@@ -26,10 +33,13 @@ defmodule JukeboxWeb.JukeboxLive do
   def mount(_params, _session, socket) do
     # Subscribe before reading: a state broadcast between the two would
     # otherwise be missed, and a duplicate is harmless.
+    audio = if AudioAnalysis.enabled?(), do: AudioAnalysis.settings()
+
     if connected?(socket) do
       Playback.Server.subscribe()
       Commands.subscribe()
       Animation.subscribe()
+      if audio, do: AudioAnalysis.subscribe()
     end
 
     state = Playback.Server.get_state()
@@ -42,7 +52,8 @@ defmodule JukeboxWeb.JukeboxLive do
        ready?: connected?(socket),
        feedback: nil,
        animation: Animation.get(),
-       beat_ms: Animation.beat_ms()
+       beat_ms: Animation.beat_ms(),
+       audio: audio
      )
      |> assign_view(state)}
   end
@@ -52,6 +63,15 @@ defmodule JukeboxWeb.JukeboxLive do
 
   def handle_info({:animation_style, style}, socket),
     do: {:noreply, assign(socket, animation: style)}
+
+  # An event only: no assign changes, so nothing is rendered or patched.
+  def handle_info({:audio_frame, %Frame{} = frame}, socket) do
+    %{view: view, animation: animation} = socket.assigns
+
+    if Presenter.audio_reactive?(view, animation),
+      do: {:noreply, push_event(socket, "audio-frame", Frame.to_payload(frame))},
+      else: {:noreply, socket}
+  end
 
   def handle_info({:command_feedback, feedback}, socket) do
     presented = Presenter.feedback(feedback)

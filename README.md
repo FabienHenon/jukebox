@@ -45,7 +45,9 @@ that the physical buttons will use.
 
 ```sh
 mix precommit        # compile --warnings-as-errors, deps.unlock --unused, format, test
-mix test             # 191 tests
+mix test             # 256 tests (2 need the native analyser built, and are skipped without it)
+mix test.js          # 20 tests of the browser-side audio controller (Node 20+, no dependency)
+make -C native/jukebox_audio_analyzer test   # 55 tests of the native analyser (needs libaubio)
 ```
 
 ## Architecture
@@ -84,6 +86,8 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
 | `Jukebox.Commands` | Semantic command service: checks the state, calls the adapter safely, broadcasts feedback. |
 | `Jukebox.Animation` | Owner of the animation style (`:calm`, `:waves`, `:chase`, `:party`) that the animation button cycles through; broadcasts changes. |
 | `Jukebox.Input`, `Jukebox.Input.Debounce`, `Jukebox.Inputs.{Noop, Fake}` | Physical-input boundary, per-command debouncing, and the two shipped adapters. |
+| `Jukebox.AudioAnalysis`, `Jukebox.AudioAnalysis.Frame`, `Jukebox.AudioAnalysis.Source` / `Jukebox.AudioAnalysis.{NativeSource, SimulatedSource, DisabledSource}` | Audio-analysis boundary: validated frames (loudness, bass, attacks, beats, tempo, confidence) published on PubSub, from the native analyser's Unix socket, from a deterministic simulation, or not at all. |
+| `native/jukebox_audio_analyzer` | The native analyser (C, aubio): reads the PCM that Shairport Sync plays, through an ALSA tap, and sends the frames. Not part of the release; built on the Pi. |
 | `Jukebox.Integrations` | Supervisor for the adapters, started after the endpoint. |
 | `JukeboxWeb.JukeboxLive` + `JukeboxWeb.JukeboxComponents` + `JukeboxWeb.Presenter` | The kiosk: one LiveView, function components per screen, a presenter that turns the domain state into a flat view model. |
 | `JukeboxWeb.SimulatorLive` | Development simulator (compiled and routed in dev only). |
@@ -139,10 +143,28 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
   artwork restores the defaults.
 - **Waves.** The Now Playing screen shows three pastel wave layers that
   scroll while playing, freeze while paused or stopped and scale with the
-  reported volume. They are driven by playback state only: the application
-  never reads audio, so this is deliberately motion, not a visualiser, and the
-  markup is decorative (`aria-hidden`). A real PCM-driven visualiser would need
-  an ALSA loopback on the Pi and is left for a later version.
+  reported volume. Without audio analysis (the default) they are driven by
+  playback state only: motion, not a visualiser. The markup is decorative
+  (`aria-hidden`) either way.
+- **Audio-reactive animation (optional).** With audio analysis enabled the
+  display follows the music actually being played: the waves rise with the
+  loudness, the cover and a glow behind it pulse with the bass, the bulbs dim
+  in quiet passages and the `chase` / `party` lights step on the detected
+  beat. The pipeline is `Shairport Sync → ALSA "file" plugin → native analyser
+  → Unix datagrams → Jukebox.AudioAnalysis.NativeSource → PubSub → LiveView
+  push_event → JukeboxLights hook`. Three rules shaped it: the analysis runs
+  outside the browser (Chromium is already the heaviest process on the Pi)
+  and outside the BEAM (no NIF); Phoenix is never on the audio path (the
+  analyser drops frames nobody reads and never waits); and a frame never
+  touches the LiveView assigns, so 20 frames a second cost 20 small events
+  and no render. The hook keeps targets and shown values apart, smooths them
+  per animation frame and writes five custom properties on `<html>`
+  (`--audio-level`, `--audio-bass`, `--audio-onset`, `--audio-beat`,
+  `--audio-mix`) that the CSS turns into transforms and opacities. Without
+  frames for half a second, or below the confidence threshold, the fixed
+  tempo takes over again, on the same step counter, so nothing jumps. See
+  [docs/audio-reactive-setup.md](docs/audio-reactive-setup.md); the ALSA side
+  has not been run on hardware yet.
 - **Animation styles.** One button (`:cycle_animation`, a semantic command
   like the transport ones, but handled locally and available without a
   player) cycles through four styles held by `Jukebox.Animation`: `calm` (no
@@ -152,9 +174,8 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
   the marquee bulbs; in `party` every block and bulb takes a random colour on
   each beat and the grille waves change direction at random. The base grilles
   ripple with a wave that crosses them once per beat. The beat is a fixed
-  tempo (`JUKEBOX_ANIMATION_BPM`, 120 by default), not the rhythm of the
-  track, for the same reason the waves are not a visualiser: the application
-  never reads audio. The last chosen style is saved to a one-line file
+  tempo (`JUKEBOX_ANIMATION_BPM`, 120 by default) unless audio analysis is
+  enabled and sure of the beat (see above). The last chosen style is saved to a one-line file
   (`animation_style` in `JUKEBOX_STATE_DIR`, `tmp/` in development) and read
   back at boot, so the jukebox comes back the way it was switched off;
   `JUKEBOX_ANIMATION_STYLE` only applies until the button has been pressed.
@@ -224,7 +245,10 @@ scaled live preview of the kiosk at 1920×1080, 1280×720 and 1024×600:
   availability;
 - press the fake physical buttons (Previous, Play / Pause, Next and the
   animation-style button, with the current style highlighted next to it) and
-  inspect the last semantic commands and the full playback state.
+  inspect the last semantic commands and the full playback state;
+- drive the simulated audio analyser: a clear beat at five tempos, free tempo
+  (beats below the confidence threshold), silence, or no analyser at all, to
+  see each fallback of the audio-reactive animation.
 
 ## Configuration
 
@@ -242,7 +266,13 @@ JUKEBOX_IDLE_TIMEOUT_MS=5000
 JUKEBOX_COALESCE_MS=150
 JUKEBOX_ANIMATION_STYLE=calm|waves|chase|party  JUKEBOX_ANIMATION_BPM=120
 JUKEBOX_STATE_DIR=/var/lib/jukebox
+AUDIO_REACTIVE_ENABLED=false  AUDIO_REACTIVE_SOURCE=native|simulated|disabled
+AUDIO_ANALYSIS_SOCKET=/run/jukebox/audio-analysis.sock  AUDIO_ANALYSIS_PUBLISH_RATE=20
+AUDIO_VISUAL_DELAY_MS=120  AUDIO_BEAT_CONFIDENCE_THRESHOLD=0.45
 ```
+
+Development uses the simulated audio source; production has audio analysis
+off until `AUDIO_REACTIVE_ENABLED=true`.
 
 Invalid local values fail fast at boot; unreachable services do not.
 
@@ -256,6 +286,9 @@ See [docs/raspberry-pi.md](docs/raspberry-pi.md) and the templates under
 - `ops/shairport-sync.conf.example` – Shairport Sync metadata/MQTT/remote fragment
 - `ops/mosquitto.conf.example` – loopback-only local broker
 - `ops/chromium-kiosk.example` – Chromium kiosk launcher with auto-restart
+- `ops/audio/` – audio-reactive animation: the ALSA `jukebox_tap` device, the
+  socket directory rule, and the install and rollback scripts
+  ([docs/audio-reactive-setup.md](docs/audio-reactive-setup.md))
 
 ## Project layout
 
@@ -263,7 +296,9 @@ See [docs/raspberry-pi.md](docs/raspberry-pi.md) and the templates under
 lib/jukebox/            domain, adapters, supervisors
 lib/jukebox_web/        kiosk LiveView, components, presenter, simulator, artwork controller
 assets/css/jukebox.css  kiosk design (custom properties, clamp(), container units)
-assets/js/hooks/        progress interpolation, artwork palette, beat-driven lights, development keyboard shortcuts
+assets/js/hooks/        progress interpolation, artwork palette, beat-driven and audio-reactive lights, development keyboard shortcuts
+assets/js/audio/        the audio-reactive controller (pure, tested with node --test in assets/test/)
+native/                 the native audio analyser (C), its tests and the ALSA tap wrapper
 priv/static/images/     original abstract demo covers and fallback artwork
 ops/, docs/             Raspberry Pi templates and documentation
 test/                   reducer, server, decoder, commands, inputs, store, LiveView tests

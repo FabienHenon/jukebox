@@ -92,7 +92,10 @@ defmodule Jukebox.MixProject do
         "esbuild jukebox --minify",
         "phx.digest"
       ],
-      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"]
+      precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"],
+      # Tests of the browser-side audio controller. Needs Node 20 or later and
+      # nothing else (the built-in test runner), so it is not part of precommit.
+      "test.js": ["cmd node --test assets/test/"]
     ]
   end
 end

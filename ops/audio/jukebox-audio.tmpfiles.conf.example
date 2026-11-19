@@ -1,0 +1,16 @@
+# Directory of the audio-analysis socket.
+#
+# Install as /etc/tmpfiles.d/jukebox-audio.conf, then create it once without
+# rebooting:  sudo systemd-tmpfiles --create /etc/tmpfiles.d/jukebox-audio.conf
+#
+# /run is emptied at every boot; this line recreates the directory each time:
+#
+#   owner  jukebox         the Phoenix release creates the socket in it
+#   group  jukebox-audio   the group Shairport Sync's user is added to, so the
+#                          analyser it starts can reach the socket
+#   mode   2750            owner: everything; group: enter and list; others:
+#                          nothing. The leading 2 (setgid) makes the socket
+#                          created inside belong to jukebox-audio as well.
+#
+# Type  Path          Mode  User     Group          Age
+d       /run/jukebox  2750  jukebox  jukebox-audio  -

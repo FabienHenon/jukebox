@@ -6,8 +6,8 @@ if Application.compile_env(:jukebox, :simulator, false) do
     Drives the demo metadata source and the fake physical input so the whole
     kiosk experience can be exercised on a laptop: sessions, tracks, playback
     status, metadata edits, artwork, progress, delayed/partial metadata,
-    metadata disconnection, remote-control availability and button presses
-    (transport and animation style).
+    metadata disconnection, remote-control availability, button presses
+    (transport and animation style) and the simulated audio analyser.
     A scaled live preview of the kiosk is embedded for the three target
     resolutions.
 
@@ -17,7 +17,8 @@ if Application.compile_env(:jukebox, :simulator, false) do
 
     use JukeboxWeb, :live_view
 
-    alias Jukebox.{Animation, Commands, Playback}
+    alias Jukebox.{Animation, AudioAnalysis, Commands, Playback}
+    alias Jukebox.AudioAnalysis.SimulatedSource
     alias Jukebox.Demo.Catalog
     alias Jukebox.Inputs.Fake
     alias Jukebox.MetadataSources.Demo
@@ -25,6 +26,13 @@ if Application.compile_env(:jukebox, :simulator, false) do
 
     @previews %{"1920x1080" => {1920, 1080}, "1280x720" => {1280, 720}, "1024x600" => {1024, 600}}
     @preview_width 880
+    @audio_profiles [
+      steady: "Clear beat",
+      free_tempo: "Free tempo",
+      silent: "Silence",
+      down: "Analyser down"
+    ]
+    @audio_tempos [84, 100, 112, 128, 150]
 
     @impl true
     def mount(_params, _session, socket) do
@@ -38,6 +46,8 @@ if Application.compile_env(:jukebox, :simulator, false) do
        socket
        |> assign(page_title: "Simulator", commands: [], preview: "1280x720")
        |> assign(animation: Animation.get())
+       |> assign(audio_profiles: @audio_profiles, audio_tempos: @audio_tempos)
+       |> assign_audio()
        |> assign_state(Playback.Server.get_state())
        |> assign_forms()}
     end
@@ -140,6 +150,24 @@ if Application.compile_env(:jukebox, :simulator, false) do
       {:noreply, socket}
     end
 
+    def handle_event("audio_profile", %{"profile" => profile}, socket) do
+      case Enum.find(SimulatedSource.profiles(), &(Atom.to_string(&1) == profile)) do
+        nil -> :ignored
+        profile -> SimulatedSource.set_profile(profile)
+      end
+
+      {:noreply, assign_audio(socket)}
+    end
+
+    def handle_event("audio_bpm", %{"bpm" => bpm}, socket) do
+      case Integer.parse(bpm) do
+        {bpm, ""} when bpm in @audio_tempos -> SimulatedSource.set_bpm(bpm)
+        _other -> :ignored
+      end
+
+      {:noreply, assign_audio(socket)}
+    end
+
     def handle_event("preview", %{"size" => size}, socket) when is_map_key(@previews, size) do
       {:noreply, assign(socket, preview: size)}
     end
@@ -149,12 +177,25 @@ if Application.compile_env(:jukebox, :simulator, false) do
       Playback.Server.reset()
       RemoteControls.Demo.clear()
       Animation.set(Animation.default_style())
-      {:noreply, assign(socket, commands: [])}
+      SimulatedSource.reset()
+      {:noreply, socket |> assign(commands: []) |> assign_audio()}
     end
 
     def handle_event(_event, _params, socket), do: {:noreply, socket}
 
     # -- internals -------------------------------------------------------------
+
+    # The simulated analyser's settings, or nil when another source (or none)
+    # is in use.
+    defp assign_audio(socket) do
+      simulated =
+        case SimulatedSource.snapshot() do
+          %{} = snapshot -> snapshot
+          {:error, :not_running} -> nil
+        end
+
+      assign(socket, audio_source: AudioAnalysis.source_kind(), audio_simulated: simulated)
+    end
 
     defp assign_state(socket, state) do
       demo =
@@ -388,6 +429,51 @@ if Application.compile_env(:jukebox, :simulator, false) do
                 </li>
                 <li :if={@commands == []} class="sim-log__empty">No command received yet.</li>
               </ul>
+            </section>
+
+            <section id="audio-card" class="sim-card">
+              <h2 class="sim-card__title">Audio analysis</h2>
+              <%= if @audio_simulated do %>
+                <p class="sim-hint">
+                  Simulated analyser → PubSub → "audio-frame" events. Frames flow only while a
+                  track is playing, in every animation style except calm.
+                </p>
+                <div id="audio-profiles" class="sim-row">
+                  <button
+                    :for={{profile, label} <- @audio_profiles}
+                    id={"audio-profile-#{profile}"}
+                    class={[
+                      "sim-btn sim-btn--small",
+                      @audio_simulated.profile == profile && "is-active"
+                    ]}
+                    phx-click="audio_profile"
+                    phx-value-profile={profile}
+                  >
+                    {label}
+                  </button>
+                </div>
+                <div id="audio-tempos" class="sim-row">
+                  <button
+                    :for={bpm <- @audio_tempos}
+                    id={"audio-bpm-#{bpm}"}
+                    class={["sim-btn sim-btn--small", @audio_simulated.bpm == bpm && "is-active"]}
+                    phx-click="audio_bpm"
+                    phx-value-bpm={bpm}
+                  >
+                    {bpm} BPM
+                  </button>
+                </div>
+                <p class="sim-hint">
+                  Free tempo: beats below the confidence threshold, so the fixed tempo drives the
+                  lights. Analyser down: no frames at all, so the display returns to its ordinary
+                  animation.
+                </p>
+              <% else %>
+                <p id="audio-source" class="sim-hint">
+                  Audio source: <code>{@audio_source}</code>. The controls here need the simulated
+                  source (the default in development).
+                </p>
+              <% end %>
             </section>
 
             <section class="sim-card">

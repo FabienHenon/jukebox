@@ -22,9 +22,10 @@ defmodule Jukebox.Animation do
   configured path nothing is saved, and an unreadable or unwritable file only
   logs a warning and leaves the configured default in charge.
 
-  The beat is a fixed tempo (`bpm` in the configuration). The application never
-  reads audio, so the lights keep a steady pace while music plays rather than
-  following the actual rhythm of the track.
+  The beat is a fixed tempo (`bpm` in the configuration): the lights keep a
+  steady pace while music plays. When audio analysis is enabled and sure of
+  the beat (`Jukebox.AudioAnalysis`), the browser steps the lights on the
+  detected beats instead and comes back to this tempo whenever it is not.
   """
 
   use GenServer

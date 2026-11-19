@@ -25,6 +25,15 @@ defmodule JukeboxWeb.JukeboxComponents do
   `phx-update="ignore"` (hence their fixed ids) so a LiveView patch never
   repaints them with the colours rendered here. The frame only tells the hook
   what to do through `data-lights`, `data-beating` and `data-beat-ms`.
+
+  ## Audio-reactive animation
+
+  When audio analysis is enabled the same hook receives `audio-frame` events
+  and turns them into CSS custom properties on `<html>` (`--audio-level`,
+  `--audio-bass`, ...; see jukebox_lights.js and the "Audio-reactive" section
+  of jukebox.css). The frame says whether to follow the audio (`data-audio`)
+  and passes the two tuning values (`data-audio-delay-ms`,
+  `data-audio-threshold`). Nothing here is rendered per frame.
   """
 
   use Phoenix.Component
@@ -40,13 +49,20 @@ defmodule JukeboxWeb.JukeboxComponents do
   attr :view, Presenter, required: true
   attr :animation, :atom, default: :waves, doc: "the animation style (see `Jukebox.Animation`)"
   attr :beat_ms, :integer, default: 500, doc: "length of one beat of the light show"
+
+  attr :audio, :map,
+    default: nil,
+    doc: "`Jukebox.AudioAnalysis.settings/0`, or nil when audio analysis is off"
+
   slot :inner_block, required: true
 
   def jukebox_frame(assigns) do
     assigns =
       assign(assigns,
         lights: Presenter.lights(assigns.view, assigns.animation),
-        beating?: Presenter.beating?(assigns.view)
+        beating?: Presenter.beating?(assigns.view),
+        audio?:
+          assigns.audio != nil and Presenter.audio_reactive?(assigns.view, assigns.animation)
       )
 
     ~H"""
@@ -57,11 +73,15 @@ defmodule JukeboxWeb.JukeboxComponents do
       data-lights={@lights}
       data-beating={to_string(@beating?)}
       data-beat-ms={@beat_ms}
+      data-audio={to_string(@audio?)}
+      data-audio-delay-ms={@audio && @audio.visual_delay_ms}
+      data-audio-threshold={@audio && @audio.beat_confidence_threshold}
       style={"--beat:#{@beat_ms}ms"}
     >
       <.marquee wave={@view.mode != :now_playing} />
       <.pillar side="left" />
       <section class="jb-screen" aria-label="Jukebox display">
+        <div class="jb-pulse" aria-hidden="true"></div>
         {render_slot(@inner_block)}
       </section>
       <.pillar side="right" />
@@ -357,9 +377,10 @@ defmodule JukeboxWeb.JukeboxComponents do
 
   @doc """
   Decorative waves for the Now Playing screen. They scroll while playing,
-  freeze while paused or stopped and scale with the reported volume. They are
-  driven purely by playback state: the jukebox never analyses audio, and the
-  markup is aria-hidden so nothing suggests otherwise.
+  freeze while paused or stopped and scale with the reported volume. Rendered
+  here they are driven purely by playback state; with audio analysis enabled
+  the `JukeboxLights` hook also scales them with the loudness, through CSS
+  alone. The markup is aria-hidden.
   """
   attr :level, :float, default: 1.0
 

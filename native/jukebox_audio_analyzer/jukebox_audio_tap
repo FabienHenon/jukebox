@@ -1,0 +1,30 @@
+#!/bin/sh
+# jukebox_audio_tap: what the ALSA "jukebox_tap" device pipes the audio into.
+#
+# It runs jukebox_audio_analyzer with the options ALSA passes, and makes sure
+# that the audio being played is ALWAYS read, whatever happens to the
+# analyser: ALSA writes every sample into this script's standard input, and a
+# pipe nobody reads would stall the player.
+#
+#   - analyser missing or not executable: say so once, read and discard
+#   - analyser crashed or was killed: say so once, read and discard
+#   - analyser ended because the audio ended: nothing left to read, exit
+#
+# Messages go to standard error, which ends up in the Shairport Sync journal
+# (journalctl -u shairport-sync). Nothing is ever written to standard output.
+
+ANALYZER="${JUKEBOX_AUDIO_ANALYZER:-/opt/jukebox/bin/jukebox_audio_analyzer}"
+
+if [ -x "$ANALYZER" ]; then
+  "$ANALYZER" "$@"
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    echo "jukebox_audio_tap: the analyser stopped (status $status); audio continues without analysis" >&2
+  fi
+else
+  echo "jukebox_audio_tap: $ANALYZER is missing or not executable; audio continues without analysis" >&2
+fi
+
+# Whatever is still coming is read and thrown away until the player closes
+# the device. After a normal end this returns at once.
+exec cat > /dev/null

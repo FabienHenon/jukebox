@@ -908,7 +908,8 @@ body.kiosk--no-cursor * {
 
 /* Decorative waves: three pastel stroked lines scrolling at different speeds
    (transform only). Amplitude follows --wave-level (volume); the animation is
-   paused while paused/stopped/ending. Not an audio visualiser. */
+   paused while paused/stopped/ending. With audio analysis the loudness scales
+   them as well (see "Audio-reactive animation" below). */
 .np__waves {
   --wave-level: 1;
   position: relative;
@@ -1004,14 +1005,16 @@ body.kiosk--no-cursor * {
    The JukeboxLights hook sets html[data-lights] while a light show runs,
    recolours the pillar blocks and bulbs on every beat and flips
    html[data-beat] so the flash below replays. --beat is the length of one
-   beat, set on .jb-body by the server. Still transform and opacity only: the
-   colour changes are a few small repaints per beat, not an animation.
+   beat of the fixed tempo, set on .jb-body by the server; --beat-live
+   replaces it while the audio analyser reports a tempo it trusts. Still
+   transform and opacity only: the colour changes are a few small repaints per
+   beat, not an animation.
    -------------------------------------------------------------------------- */
 
 /* Lamps and bulbs flash on the beat and settle until the next one. */
 html[data-lights] .jb-body .bulb,
 html[data-lights] .jb-body .jb-lamp {
-  animation: beat-flash-a var(--beat, 500ms) cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation: beat-flash-a var(--beat-live, var(--beat, 500ms)) cubic-bezier(0.2, 0.7, 0.3, 1) both;
 }
 
 html[data-lights][data-beat="1"] .jb-body .bulb,
@@ -1079,6 +1082,72 @@ html:not([data-lights-live]) .jb-grille__wave {
   to {
     transform: translateX(0);
   }
+}
+
+/* --------------------------------------------------------------------------
+   Audio-reactive animation
+   While analysed audio frames arrive, the JukeboxLights hook sets
+   html[data-audio] and keeps these custom properties (all 0..1, already
+   smoothed) up to date on <html>, about 30 times a second:
+
+     --audio-level   loudness
+     --audio-bass    low-frequency energy
+     --audio-onset   a musical attack: jumps up, decays quickly
+     --audio-beat    one pulse per trusted detected beat
+     --audio-mix     how much the audio drives the picture; fades in and out
+                     so nothing jumps when frames start or stop
+
+   Every rule below is written so that it equals the ordinary look when the
+   properties are 0, and only transform and opacity ever change: no filter, no
+   shadow, no layout. Without frames (analyser off, down or silent) the
+   properties are removed and the page is exactly what it was.
+   -------------------------------------------------------------------------- */
+
+/* A soft glow in the artwork's accent colour behind the screen content: it
+   brightens with the music, flashes on attacks and beats and swells with the
+   bass. The gradient is painted once; the layer only fades and scales. */
+.jb-pulse {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(60% 76% at 30% 56%, var(--accent, var(--rose)) 0%, transparent 74%);
+  opacity: 0;
+}
+
+html[data-audio] .jb-pulse {
+  will-change: opacity, transform;
+  opacity: calc(
+    var(--audio-mix, 0) *
+      (var(--audio-level, 0) * 0.14 + var(--audio-onset, 0) * 0.14 + var(--audio-beat, 0) * 0.12)
+  );
+  transform: scale(calc(0.94 + var(--audio-bass, 0) * 0.1));
+}
+
+/* The cover and its plates breathe with the bass. */
+html[data-audio] .np__art-slot {
+  will-change: transform;
+  transform: scale(calc(1 + var(--audio-bass, 0) * 0.03));
+}
+
+/* The waves rise and fall with the loudness, from a third of their height in
+   a quiet passage to slightly more than their ordinary height in a loud one. */
+html[data-audio] .np__waves {
+  will-change: transform;
+  transform: scaleY(
+    calc(var(--wave-level) * (1 + var(--audio-mix, 0) * (var(--audio-level, 0) * 0.8 - 0.7)))
+  );
+}
+
+/* The bulb rows dim in quiet passages and come up with the music; the
+   pillars do the same, more discreetly. */
+html[data-audio] .jb-body .jb-lights {
+  will-change: opacity;
+  opacity: calc(1 - var(--audio-mix, 0) * (1 - var(--audio-level, 0)) * 0.45);
+}
+
+html[data-audio] .jb-body .jb-pillar {
+  will-change: opacity;
+  opacity: calc(1 - var(--audio-mix, 0) * (1 - var(--audio-level, 0)) * 0.28);
 }
 
 /* --------------------------------------------------------------------------
