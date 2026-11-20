@@ -7,7 +7,10 @@ if Application.compile_env(:jukebox, :simulator, false) do
     kiosk experience can be exercised on a laptop: sessions, tracks, playback
     status, metadata edits, artwork, progress, delayed/partial metadata,
     metadata disconnection, remote-control availability, button presses
-    (transport and animation style) and the simulated audio analyser.
+    (transport and animation style), the simulated audio analyser and the
+    physical controls (raw key events through the real dispatcher, with a
+    pretend power controller and a pretend X11 display, plus the same status
+    as `Jukebox.Hardware.status/0`).
     A scaled live preview of the kiosk is embedded for the three target
     resolutions.
 
@@ -17,12 +20,25 @@ if Application.compile_env(:jukebox, :simulator, false) do
 
     use JukeboxWeb, :live_view
 
-    alias Jukebox.{Animation, AudioAnalysis, Commands, Playback}
+    alias Jukebox.{Animation, AudioAnalysis, Commands, Hardware, Playback}
     alias Jukebox.AudioAnalysis.SimulatedSource
     alias Jukebox.Demo.Catalog
     alias Jukebox.Inputs.Fake
     alias Jukebox.MetadataSources.Demo
     alias Jukebox.RemoteControls
+
+    # Lower-case key names: the "Physical buttons" card above keeps the
+    # semantic buttons, these are the raw keys of the pretend encoder.
+    @hardware_buttons [
+      previous: "previous",
+      play_pause: "play / pause",
+      next: "next",
+      disco_toggle: "disco",
+      strip_toggle: "strip",
+      animation_next: "animation",
+      brightness_down: "brightness −",
+      brightness_up: "brightness +"
+    ]
 
     @previews %{"1920x1080" => {1920, 1080}, "1280x720" => {1280, 720}, "1024x600" => {1024, 600}}
     @preview_width 880
@@ -40,6 +56,8 @@ if Application.compile_env(:jukebox, :simulator, false) do
         Playback.Server.subscribe()
         Commands.subscribe()
         Animation.subscribe()
+        Hardware.Events.subscribe()
+        Hardware.Power.Monitor.subscribe()
       end
 
       {:ok,
@@ -47,6 +65,8 @@ if Application.compile_env(:jukebox, :simulator, false) do
        |> assign(page_title: "Simulator", commands: [], preview: "1280x720")
        |> assign(animation: Animation.get())
        |> assign(audio_profiles: @audio_profiles, audio_tempos: @audio_tempos)
+       |> assign(hardware_buttons: @hardware_buttons)
+       |> assign_hardware()
        |> assign_audio()
        |> assign_state(Playback.Server.get_state())
        |> assign_forms()}
@@ -60,8 +80,16 @@ if Application.compile_env(:jukebox, :simulator, false) do
     end
 
     def handle_info({:command_feedback, feedback}, socket) do
-      {:noreply, assign(socket, commands: Enum.take([feedback | socket.assigns.commands], 8))}
+      {:noreply,
+       socket
+       |> assign(commands: Enum.take([feedback | socket.assigns.commands], 8))
+       |> assign_hardware()}
     end
+
+    def handle_info({:hardware_changed, _subsystem}, socket),
+      do: {:noreply, assign_hardware(socket)}
+
+    def handle_info({:power_state, _snapshot}, socket), do: {:noreply, assign_hardware(socket)}
 
     def handle_info(_message, socket), do: {:noreply, socket}
 
@@ -150,6 +178,46 @@ if Application.compile_env(:jukebox, :simulator, false) do
       {:noreply, socket}
     end
 
+    # A raw key event on the pretend input device: from here on everything is
+    # the production path (mapping, debounce, power gate, queues, commands).
+    def handle_event("hardware_tap", %{"action" => action}, socket) do
+      with %{buttons: %{source: :simulated, mapping: mapping}} <- socket.assigns.hardware,
+           {_action, code} when is_integer(code) <-
+             Enum.find(mapping, fn {name, _code} -> Atom.to_string(name) == action end) do
+        Jukebox.Inputs.Simulated.tap(code)
+      end
+
+      {:noreply, socket}
+    end
+
+    def handle_event("hardware_power", %{"mode" => mode}, socket) do
+      if socket.assigns.hardware_simulated_power? do
+        case mode do
+          "awake" -> simulate_power(:awake)
+          "standby" -> simulate_power(:standby)
+          "shutting_down" -> simulate_power(:shutting_down)
+          "down" -> Hardware.Power.Simulated.set_available(false)
+          _other -> :ignored
+        end
+      end
+
+      {:noreply, assign_hardware(socket)}
+    end
+
+    # The pretend X server: gone, back, or restarted with its brightness reset.
+    def handle_event("hardware_display", %{"state" => state}, socket) do
+      if simulated_display?(socket.assigns.hardware) do
+        case state do
+          "up" -> Hardware.Brightness.Simulated.set_available(true)
+          "down" -> Hardware.Brightness.Simulated.set_available(false)
+          "restarted" -> Hardware.Brightness.Simulated.reset()
+          _other -> :ignored
+        end
+      end
+
+      {:noreply, assign_hardware(socket)}
+    end
+
     def handle_event("audio_profile", %{"profile" => profile}, socket) do
       case Enum.find(SimulatedSource.profiles(), &(Atom.to_string(&1) == profile)) do
         nil -> :ignored
@@ -173,17 +241,54 @@ if Application.compile_env(:jukebox, :simulator, false) do
     end
 
     def handle_event("reset", _params, socket) do
+      if socket.assigns.hardware_simulated_power?, do: simulate_power(:awake)
+
+      if simulated_display?(socket.assigns.hardware),
+        do: Hardware.Brightness.Simulated.set_available(true)
+
       Demo.reset()
       Playback.Server.reset()
       RemoteControls.Demo.clear()
       Animation.set(Animation.default_style())
       SimulatedSource.reset()
-      {:noreply, socket |> assign(commands: []) |> assign_audio()}
+      {:noreply, socket |> assign(commands: []) |> assign_audio() |> assign_hardware()}
     end
 
     def handle_event(_event, _params, socket), do: {:noreply, socket}
 
     # -- internals -------------------------------------------------------------
+
+    defp simulate_power(mode) do
+      Hardware.Power.Simulated.set_available(true)
+      Hardware.Power.Simulated.set_mode(mode)
+    end
+
+    # What Jukebox.Hardware.status/0 reports, read again on every change.
+    defp assign_hardware(socket) do
+      status = Hardware.status()
+
+      assign(socket,
+        hardware: status,
+        hardware_simulated_power?: status.config.power.source == :simulated
+      )
+    end
+
+    defp connection_state(state) when is_atom(state), do: Atom.to_string(state)
+    defp connection_state({state, detail}), do: "#{state} (#{inspect(detail)})"
+
+    defp light_state(%{confirmed: true}), do: "on"
+    defp light_state(%{confirmed: false}), do: "off"
+    defp light_state(_unknown), do: "unknown"
+
+    defp simulated_display?(%{brightness: %{backend: :simulated, status: :enabled}}), do: true
+    defp simulated_display?(_hardware), do: false
+
+    # The software coefficient the display confirmed, or why there is none.
+    defp brightness_state(%{applied_coefficient: applied}) when is_float(applied),
+      do: "#{applied} applied"
+
+    defp brightness_state(%{availability: availability}), do: to_string(availability)
+    defp brightness_state(_not_running), do: "not running"
 
     # The simulated analyser's settings, or nil when another source (or none)
     # is in use.
@@ -429,6 +534,140 @@ if Application.compile_env(:jukebox, :simulator, false) do
                 </li>
                 <li :if={@commands == []} class="sim-log__empty">No command received yet.</li>
               </ul>
+            </section>
+
+            <section id="hardware-card" class="sim-card">
+              <h2 class="sim-card__title">Physical controls</h2>
+              <p class="sim-hint">
+                Raw key event → Jukebox.Hardware.Buttons (debounce, power gate) → Jukebox.Commands.
+                Lights and software dimming report what was confirmed, never what was asked.
+              </p>
+              <%= if is_map(@hardware.buttons) and @hardware.buttons.source == :simulated do %>
+                <div id="hardware-buttons" class="sim-row">
+                  <button
+                    :for={{action, label} <- @hardware_buttons}
+                    id={"hardware-tap-#{action}"}
+                    class="sim-btn sim-btn--small"
+                    phx-click="hardware_tap"
+                    phx-value-action={action}
+                  >
+                    {label}
+                  </button>
+                </div>
+              <% else %>
+                <p id="hardware-buttons-off" class="sim-hint">
+                  The pretend input device is not in use (JUKEBOX_BUTTONS_SOURCE is not
+                  "simulated"): presses come from the real device only.
+                </p>
+              <% end %>
+              <div :if={@hardware_simulated_power?} id="hardware-power" class="sim-row">
+                <button
+                  :for={
+                    {mode, label} <- [
+                      {"awake", "Awake"},
+                      {"standby", "Standby"},
+                      {"shutting_down", "Shutting down"},
+                      {"down", "Controller down"}
+                    ]
+                  }
+                  id={"hardware-power-#{mode}"}
+                  class={[
+                    "sim-btn sim-btn--small",
+                    mode == to_string(@hardware.power.mode) && "is-active",
+                    mode == "down" && @hardware.power.mode == :unknown && "is-active"
+                  ]}
+                  phx-click="hardware_power"
+                  phx-value-mode={mode}
+                >
+                  {label}
+                </button>
+              </div>
+              <div :if={simulated_display?(@hardware)} id="hardware-display" class="sim-row">
+                <button
+                  :for={
+                    {state, label} <- [
+                      {"up", "X11 up"},
+                      {"down", "X11 down"},
+                      {"restarted", "X11 restarted"}
+                    ]
+                  }
+                  id={"hardware-display-#{state}"}
+                  class="sim-btn sim-btn--small"
+                  phx-click="hardware_display"
+                  phx-value-state={state}
+                >
+                  {label}
+                </button>
+              </div>
+              <table id="hardware-status" class="sim-table">
+                <tbody>
+                  <tr>
+                    <th>power mode</th>
+                    <td id="hardware-power-mode">
+                      {@hardware.power.mode}
+                      <span :if={@hardware.power.reason}>({inspect(@hardware.power.reason)})</span>
+                    </td>
+                  </tr>
+                  <%= if is_map(@hardware.lights) do %>
+                    <tr :for={light <- [:disco, :strip]}>
+                      <th>{light} ({@hardware.lights[light].backend})</th>
+                      <td id={"hardware-light-#{light}"}>
+                        {light_state(@hardware.lights[light])}
+                        <span :if={@hardware.lights[light].pending > 0}>· pending</span>
+                        <span :if={@hardware.lights[light].last_error}>
+                          · {inspect(@hardware.lights[light].last_error)}
+                        </span>
+                      </td>
+                    </tr>
+                  <% end %>
+                  <tr>
+                    <th>software dimming</th>
+                    <td id="hardware-brightness">
+                      {brightness_state(@hardware.brightness)}
+                      <%= if is_map(@hardware.brightness) do %>
+                        <span>· {@hardware.brightness.desired_coefficient} desired</span>
+                        <span :if={@hardware.brightness.pending?}>· pending</span>
+                        <span :if={@hardware.brightness.last_error}>
+                          · {inspect(@hardware.brightness.last_error)}
+                        </span>
+                      <% end %>
+                    </td>
+                  </tr>
+                  <%= if is_map(@hardware.buttons) do %>
+                    <tr>
+                      <th>input device</th>
+                      <td id="hardware-connection">
+                        {connection_state(@hardware.buttons.connection)}
+                        <span :if={@hardware.buttons.device}>
+                          · {@hardware.buttons.device.name}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>last accepted</th>
+                      <td id="hardware-last-accepted">
+                        <%= if @hardware.buttons.last_accepted do %>
+                          code {@hardware.buttons.last_accepted.code} → {@hardware.buttons.last_accepted.action}
+                        <% else %>
+                          —
+                        <% end %>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>counters</th>
+                      <td id="hardware-counts">
+                        {Enum.map_join(@hardware.buttons.counts, " · ", fn {name, count} ->
+                          "#{name} #{count}"
+                        end)}
+                      </td>
+                    </tr>
+                  <% end %>
+                  <tr :if={@hardware.recent_error != %{}}>
+                    <th>recent errors</th>
+                    <td id="hardware-errors">{inspect(@hardware.recent_error)}</td>
+                  </tr>
+                </tbody>
+              </table>
             </section>
 
             <section id="audio-card" class="sim-card">

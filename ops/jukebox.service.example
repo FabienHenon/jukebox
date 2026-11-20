@@ -28,6 +28,17 @@ Environment=RELEASE_TMP=/tmp/jukebox
 # /var/lib/jukebox, created and owned by the service user: the last chosen
 # animation style is saved there so it survives a power cycle.
 StateDirectory=jukebox
+# Physical controls (docs/physical-controls.md): reading the button encoder
+# needs the group that owns /dev/input/event*. Uncomment once that group
+# exists on this system (`getent group input`); systemd refuses to start a
+# unit that names a missing group.
+#SupplementaryGroups=input
+# Screen brightness runs /usr/bin/xrandr against the kiosk's X session: the
+# service must be able to see /tmp/.X11-unix and to read the file named by
+# JUKEBOX_X11_XAUTHORITY. This unit hides neither. If you add PrivateTmp=,
+# ProtectHome= or device restrictions, let exactly those through instead of
+# removing the protection, for example:
+#BindReadOnlyPaths=/tmp/.X11-unix /home/jukebox/.Xauthority
 ExecStart=/opt/jukebox/bin/jukebox start
 ExecStop=/opt/jukebox/bin/jukebox stop
 Restart=on-failure

@@ -39,3 +39,6 @@ npm-debug.log
 
 # Native audio analyser: built on the machine that runs it, never committed.
 /native/jukebox_audio_analyzer/build*/
+
+# Python bytecode (tests of the power controller and of the input helper).
+__pycache__/

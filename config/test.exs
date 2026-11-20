@@ -26,3 +26,23 @@ config :jukebox, Jukebox.Playback, idle_timeout_ms: 60_000, coalesce_ms: 0
 config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, tick_ms: nil}
 config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
 config :jukebox, :input, {Jukebox.Inputs.Fake, debounce_ms: 80}
+
+# Physical controls: everything simulated, as in development, so the whole
+# path from a raw key event to a command runs in tests without any hardware.
+# The key codes are arbitrary.
+config :jukebox, Jukebox.Hardware,
+  power: :simulated,
+  allow_simulated: true,
+  env: %{
+    "JUKEBOX_BUTTONS_ENABLED" => "true",
+    "JUKEBOX_BUTTONS_SOURCE" => "simulated",
+    "JUKEBOX_BUTTON_PREVIOUS" => "704",
+    "JUKEBOX_BUTTON_PLAY_PAUSE" => "705",
+    "JUKEBOX_BUTTON_NEXT" => "706",
+    "JUKEBOX_BUTTON_DISCO_TOGGLE" => "707",
+    "JUKEBOX_BUTTON_STRIP_TOGGLE" => "708",
+    "JUKEBOX_BUTTON_ANIMATION_NEXT" => "709",
+    "JUKEBOX_BUTTON_BRIGHTNESS_DOWN" => "710",
+    "JUKEBOX_BUTTON_BRIGHTNESS_UP" => "711",
+    "JUKEBOX_BRIGHTNESS_BACKEND" => "simulated"
+  }

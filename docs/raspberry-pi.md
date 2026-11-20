@@ -144,9 +144,13 @@ sudo chmod 600 /etc/jukebox/jukebox.env
 | `AUDIO_ANALYSIS_PUBLISH_RATE` | `20` | most analysis frames per second sent to the browser, 1 to 20 |
 | `AUDIO_VISUAL_DELAY_MS` | `120` | how long the browser holds a frame before showing it, 0 to 1000 (the env template sets 0; see "Calibrating" in the audio guide) |
 | `AUDIO_BEAT_CONFIDENCE_THRESHOLD` | `0.45` | beat-tracking confidence, 0 to 1, below which the fixed tempo drives the lights |
+| `JUKEBOX_BUTTONS_*`, `JUKEBOX_BUTTON_*`, `JUKEBOX_BRIGHTNESS_*`, `JUKEBOX_XRANDR_OUTPUT`, `JUKEBOX_X11_*`, `JUKEBOX_POWER_*`, `JUKEBOX_STRIP_CONTROL`, `JUKEBOX_WLED_URL` | buttons off | buttons, monitor brightness and lights: see [physical-controls.md](physical-controls.md#7-environment-reference) |
 
 Invalid local values (a non-numeric port, an unknown adapter name) fail fast
-at boot with a readable message. Unreachable services do not.
+at boot with a readable message. Unreachable services do not. The variables of
+the physical controls are the exception: they describe optional hardware, so a
+wrong value there never stops the service. It disables the buttons, the
+brightness or the strip control, and says why in the journal.
 
 Install the unit:
 
@@ -191,49 +195,42 @@ Landscape orientation and resolution are set at the OS level (Screen
 Configuration tool or `/boot/firmware/cmdline.txt` `video=` parameter). The
 page is fluid and tested at 1920×1080, 1280×720 and 1024×600.
 
-## 6. Physical buttons (GPIO)
+## 6. Physical buttons, brightness and lights
 
-Version one ships with the no-op input adapter (`Jukebox.Inputs.Noop`). The
-boundary for the real buttons is ready:
+The eight buttons are not wired to the GPIO header: they go to a USB button
+encoder, read on the server through Linux evdev. Together with the screen
+brightness (X11 software dimming with `xrandr`; the HDMI-to-VGA adapter
+carries no DDC) and the lights they are described, installed and commissioned
+in [physical-controls.md](physical-controls.md).
 
-- `Jukebox.Input` – the behaviour (`child_spec/1`); the adapter is a
-  supervised process under `Jukebox.Integrations`.
-- `Jukebox.Input.Debounce` – pure per-command debouncer (80 ms default) that
-  the GPIO adapter must apply at the edge, exactly like `Jukebox.Inputs.Fake`.
-- `Jukebox.Commands.dispatch/1` – the single entry point for the semantic
-  commands `:previous_track`, `:toggle_playback`, `:next_track` and
-  `:cycle_animation` (the animation-style button, which is handled inside the
-  application and needs no AirPlay sender).
+The buttons are disabled until they have been set up on the Pi itself
+(`JUKEBOX_BUTTONS_ENABLED=false`): no key code or input device is assumed.
+The example environment file selects the `xrandr` brightness backend with the
+output measured on this jukebox (`HDMI-1`) and a neutral start (`1.0`); if X11
+is not there the jukebox starts all the same.
 
-A future `Jukebox.Inputs.Gpio` (for example on top of `circuits_gpio`, not
-added yet because it was not verifiable without the hardware) should read its
-mapping from configuration rather than hard-coding pins:
-
-```elixir
-# config/runtime.exs (prod), example only
-config :jukebox, :input,
-  {Jukebox.Inputs.Gpio,
-   pins: [previous_track: 17, toggle_playback: 27, next_track: 22, cycle_animation: 23],
-   pull: :up, active: :low, debounce_ms: 80}
-```
-
-Suggested wiring (BCM numbering): buttons between the pin and ground with the
-internal pull-up enabled; a press reads as a falling edge. Long presses are out
-of scope for version one.
+The older boundary is still there for development and tests:
+`Jukebox.Inputs.Fake` injects semantic commands into
+`Jukebox.Commands.dispatch/1`, and `Jukebox.Inputs.Noop` is what production
+uses for it.
 
 ## 7. Power button
 
-The physical power button is handled by the OS, not by Phoenix. Raspberry Pi
-OS supports a wake/shutdown button on GPIO 3 (pin 5) through the
-`gpio-shutdown` device-tree overlay:
+The Power button (GPIO3, physical pin 5, to GND on pin 6) is handled by a
+separate root service, the power controller, never by Phoenix: short press for
+standby and resume, a press held three seconds for a clean shutdown, and a
+press while halted to boot. The same service owns the amplifier and light
+outputs. See [physical-controls.md](physical-controls.md#3-power-controller).
+
+The controller replaces the `gpio-shutdown` overlay. Do **not** keep
 
 ```
-# /boot/firmware/config.txt
-dtoverlay=gpio-shutdown,gpio_pin=3,active_low=1,gpio_pull=up
+dtoverlay=gpio-shutdown
 ```
 
-Shorting GPIO 3 to ground powers the Pi on from halt and triggers a clean
-shutdown while running. The application never touches this button.
+in `/boot/firmware/config.txt` once the controller is installed: both would
+claim GPIO3, and the overlay shuts the Pi down on a short press. Without the
+controller, that overlay alone still gives a plain shutdown/boot button.
 
 ## Audio-reactive animation (optional)
 
@@ -251,6 +248,7 @@ one command that returns Shairport Sync to direct DAC output.
 | Idle screen never changes when playing | `mosquitto_sub -t 'jukebox/shairport/#' -v`; Shairport `mqtt` block; `journalctl -u shairport-sync` |
 | "Reconnecting…" on the screen | broker down or `JUKEBOX_MQTT_HOST/PORT` wrong; `journalctl -u jukebox` shows the backoff |
 | Buttons show "Control unavailable" | `enable_remote` not set, `JUKEBOX_REMOTE_CONTROL_ENABLED=false`, or the sender does not support DACP |
+| A physical button does nothing, or "Brightness unavailable", "… not confirmed" | [physical-controls.md, Diagnostics](physical-controls.md#8-diagnostics) |
 | Artwork missing | sender did not send cover art, or the image exceeded 2 MB / was not JPEG/PNG (logged as a warning) |
 | Browser shows a Chromium error page | Phoenix not up yet; the launcher retries, or check `systemctl status jukebox` |
 
@@ -264,10 +262,12 @@ Raspberry Pi with real hardware:
   YouTube Music (topic names and payload formats follow the Shairport Sync
   4.x MQTT backend documentation and source);
 - DACP remote control through `jukebox/shairport/remote`;
-- GPIO button input (no adapter shipped yet);
+- the physical buttons, the screen brightness, the lights and the power
+  controller (see the checklist at the end of
+  [physical-controls.md](physical-controls.md#11-tested-and-still-to-test));
 - audio output through the DAC;
 - boot automation, screen blanking and Chromium kiosk behaviour;
 - the audio-reactive animation beyond the application itself: the ALSA tap,
   the native analyser on ARMv7 and the timing of the lights against the sound
   (see the checklist in [audio-reactive-setup.md](audio-reactive-setup.md));
-- the power button overlay and clean shutdown.
+- the Power button, standby and clean shutdown.

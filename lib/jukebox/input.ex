@@ -9,13 +9,22 @@ defmodule Jukebox.Input do
 
   Implementations:
 
-    * `Jukebox.Inputs.Noop` - production-safe placeholder until GPIO is wired
-    * `Jukebox.Inputs.Fake` - test/dev implementation driven by `press/2`
+    * `Jukebox.Inputs.Noop` - starts nothing (production default for this
+      boundary)
+    * `Jukebox.Inputs.Fake` - test/dev implementation driven by `press/2`,
+      which injects semantic commands directly
 
-  A future `Jukebox.Inputs.Gpio` should read its pin mapping from
-  configuration, apply `Jukebox.Input.Debounce` at the boundary and call
-  `Jukebox.Commands.dispatch/1` exactly like the fake input does. See
-  `docs/raspberry-pi.md` for the expected mapping.
+  The real buttons do not arrive here as commands but as raw key events, and
+  they have more to respect than a debounce (the power mode, held keys, lost
+  events). Their two adapters are selected by `JUKEBOX_BUTTONS_SOURCE` and
+  started by `Jukebox.Hardware.Supervisor`, in front of the dispatcher
+  `Jukebox.Hardware.Buttons`:
+
+    * `Jukebox.Inputs.Evdev` - one Linux input device (the USB button
+      encoder), read by `priv/hardware/xinmo_evdev.py`
+    * `Jukebox.Inputs.Simulated` - the same raw events, injected by hand
+
+  See `docs/physical-controls.md`.
   """
 
   @type command :: Jukebox.Commands.command()

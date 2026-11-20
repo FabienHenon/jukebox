@@ -15,7 +15,10 @@ defmodule JukeboxWeb.JukeboxLive do
   them on its own.
 
   Development keyboard shortcuts (`dev_keys` config, compile-time) route
-  through `Jukebox.Commands`, the same path future GPIO buttons use.
+  through `Jukebox.Commands`, the same path the physical buttons use. The
+  buttons themselves never pass through a browser: they are read on the
+  server (`Jukebox.Hardware.Buttons`), and this view only shows the feedback
+  that `Jukebox.Commands` broadcasts, however many browsers are connected.
   """
 
   use JukeboxWeb, :live_view

@@ -4,6 +4,7 @@ defmodule JukeboxWeb.SimulatorLiveTest do
   use JukeboxWeb.ConnCase, async: false
 
   import Phoenix.LiveViewTest
+  import Jukebox.Test.HardwareHelpers, only: [eventually: 1]
 
   alias Jukebox.Animation
   alias Jukebox.AudioAnalysis.SimulatedSource
@@ -22,6 +23,10 @@ defmodule JukeboxWeb.SimulatorLiveTest do
     RemoteControls.Demo.clear()
     Server.reset()
     Animation.set(:waves)
+    Jukebox.Hardware.Power.Simulated.set_available(true)
+    Jukebox.Hardware.Power.Simulated.set_mode(:awake)
+    Jukebox.Hardware.Brightness.Simulated.set_available(true)
+    Jukebox.Hardware.Brightness.Desired.update(fn _current -> 1000 end)
   end
 
   test "drives a complete session from the controls", %{conn: conn} do
@@ -105,6 +110,97 @@ defmodule JukeboxWeb.SimulatorLiveTest do
     view |> element("button", "Reset everything") |> render_click()
     assert Animation.get() == :chase
     assert has_element?(view, "#animation-styles .is-active[data-style=chase]")
+  end
+
+  describe "physical controls card" do
+    setup do
+      # The pretend encoder is shared by these tests: stay clear of the
+      # debounce window of a key the previous test has just released.
+      Process.sleep(100)
+    end
+
+    test "a raw key press goes through the real dispatcher, once", %{conn: conn} do
+      {:ok, view, _} = live_isolated(conn, JukeboxWeb.SimulatorLive)
+      assert has_element?(view, "#hardware-power-mode", "awake")
+      assert has_element?(view, "#hardware-connection", "Simulated button encoder")
+
+      view |> element("#hardware-tap-animation_next") |> render_click()
+
+      eventually(fn -> Animation.get() == :chase end)
+      eventually(fn -> has_element?(view, "#hardware-last-accepted", "animation_next") end)
+      assert has_element?(view, "#animation-styles .is-active[data-style=chase]")
+      assert has_element?(view, "#command-log code", "cycle_animation")
+    end
+
+    test "lights and software dimming show what was confirmed", %{conn: conn} do
+      {:ok, view, _} = live_isolated(conn, JukeboxWeb.SimulatorLive)
+      before = Jukebox.Hardware.status().lights.disco.confirmed
+
+      view |> element("#hardware-tap-disco_toggle") |> render_click()
+      eventually(fn -> Jukebox.Hardware.status().lights.disco.confirmed == not before end)
+      state = if before, do: "off", else: "on"
+      eventually(fn -> has_element?(view, "#hardware-light-disco", state) end)
+      eventually(fn -> has_element?(view, "#command-log code", "toggle_disco") end)
+
+      # Software dimming starts at the neutral 1.0: one press down is 0.9.
+      view |> element("#hardware-tap-brightness_down") |> render_click()
+      eventually(fn -> Jukebox.Hardware.status().brightness.applied_coefficient == 0.9 end)
+      eventually(fn -> has_element?(view, "#hardware-brightness", "0.9 applied") end)
+      assert has_element?(view, "#hardware-brightness", "0.9 desired")
+      eventually(fn -> has_element?(view, "#command-log code", "brightness_down") end)
+    end
+
+    test "the pretend X server can go away and come back", %{conn: conn} do
+      {:ok, view, _} = live_isolated(conn, JukeboxWeb.SimulatorLive)
+      eventually(fn -> Jukebox.Hardware.status().brightness.x11_ready? end)
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        view |> element("#hardware-display-down") |> render_click()
+        view |> element("#hardware-tap-brightness_down") |> render_click()
+
+        # The press is taken (the desired value moves) but nothing is applied.
+        eventually(fn -> has_element?(view, "#hardware-brightness", "x11_unavailable") end)
+        assert has_element?(view, "#hardware-brightness", "0.9 desired")
+
+        view |> element("#hardware-display-up") |> render_click()
+        eventually(fn -> has_element?(view, "#hardware-brightness", "0.9 applied") end)
+      end)
+    end
+
+    test "in standby, or without the controller, the keys do nothing", %{conn: conn} do
+      {:ok, view, _} = live_isolated(conn, JukeboxWeb.SimulatorLive)
+
+      view |> element("#hardware-power-standby") |> render_click()
+      assert has_element?(view, "#hardware-power-mode", "standby")
+      assert has_element?(view, "#hardware-power-standby.is-active")
+
+      discarded = Jukebox.Hardware.status().buttons.counts.discarded_not_awake
+      view |> element("#hardware-tap-animation_next") |> render_click()
+
+      eventually(fn ->
+        Jukebox.Hardware.status().buttons.counts.discarded_not_awake == discarded + 1
+      end)
+
+      assert Animation.get() == :waves
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        view |> element("#hardware-power-down") |> render_click()
+        assert has_element?(view, "#hardware-power-mode", "unknown")
+        assert has_element?(view, "#hardware-errors", "missing")
+
+        # A different key: the previous one was released moments ago, and a
+        # press that close to it would be taken for contact bounce.
+        view |> element("#hardware-tap-next") |> render_click()
+
+        eventually(fn ->
+          Jukebox.Hardware.status().buttons.counts.discarded_not_awake == discarded + 2
+        end)
+      end)
+
+      view |> element("button", "Reset everything") |> render_click()
+      assert has_element?(view, "#hardware-power-mode", "awake")
+      assert Animation.get() == :chase
+    end
   end
 
   test "without the simulated analyser the audio card only names the source", %{conn: conn} do

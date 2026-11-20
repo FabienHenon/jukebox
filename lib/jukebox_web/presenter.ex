@@ -125,6 +125,27 @@ defmodule JukeboxWeb.Presenter do
       {:ok, {:animation, style}} ->
         %{id: id, kind: :ok, icon: :animation, label: "Animation: " <> animation_label(style)}
 
+      # Hardware outcomes are only ever what was confirmed: the level the
+      # power controller commanded, the value the monitor reported back.
+      {:ok, {:light, light, on?}} ->
+        state = if on?, do: "on", else: "off"
+        %{id: id, kind: :ok, icon: :light, label: "#{light_label(light)} #{state}"}
+
+      {:ok, {:brightness, percent}} ->
+        %{id: id, kind: :ok, icon: :brightness, label: "Brightness #{percent}%"}
+
+      {:error, :hardware_unavailable} ->
+        %{id: id, kind: :muted, icon: :info, label: "#{hardware_label(command)} unavailable"}
+
+      {:error, :unconfirmed} ->
+        %{id: id, kind: :muted, icon: :info, label: "#{hardware_label(command)} not confirmed"}
+
+      {:error, :busy} ->
+        %{id: id, kind: :muted, icon: :info, label: "#{hardware_label(command)} busy"}
+
+      {:error, :not_awake} ->
+        %{id: id, kind: :muted, icon: :info, label: "Standby"}
+
       {:error, :no_active_player} ->
         %{id: id, kind: :muted, icon: :info, label: "No active player"}
 
@@ -135,6 +156,17 @@ defmodule JukeboxWeb.Presenter do
         %{id: id, kind: :muted, icon: :info, label: "Command not delivered"}
     end
   end
+
+  defp light_label(:disco), do: "Disco lights"
+  defp light_label(:strip), do: "LED strip"
+
+  defp hardware_label(:toggle_disco), do: "Disco lights"
+  defp hardware_label(:toggle_strip), do: "LED strip"
+
+  defp hardware_label(command) when command in [:brightness_down, :brightness_up],
+    do: "Brightness"
+
+  defp hardware_label(_command), do: "Control"
 
   @doc "Formats milliseconds as m:ss or h:mm:ss."
   @spec format_time(integer()) :: String.t()

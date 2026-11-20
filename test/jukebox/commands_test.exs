@@ -160,4 +160,62 @@ defmodule Jukebox.CommandsTest do
     assert Commands.parse("shutdown") == :error
     assert Commands.parse(42) == :error
   end
+
+  describe "hardware commands" do
+    test "are part of the one command vocabulary" do
+      for command <- [:toggle_disco, :toggle_strip, :brightness_down, :brightness_up] do
+        assert command in Commands.commands()
+        assert Commands.parse(Atom.to_string(command)) == {:ok, command}
+      end
+
+      assert Jukebox.Hardware.commands() -- Commands.commands() == []
+    end
+
+    test "an accepted request says nothing yet: the outcome is reported later", %{opts: opts} do
+      test = self()
+
+      hardware = fn command ->
+        send(test, {:hardware, command})
+        {:ok, :accepted}
+      end
+
+      assert Commands.dispatch(:toggle_disco, [hardware: hardware] ++ opts) == {:ok, :accepted}
+      assert_receive {:hardware, :toggle_disco}
+      refute_receive {:command_feedback, _feedback}, 50
+
+      # ...by the worker, once the hardware confirmed it.
+      assert Commands.report(:toggle_disco, {:ok, {:light, :disco, true}}, opts) ==
+               {:ok, {:light, :disco, true}}
+
+      assert_receive {:command_feedback,
+                      %{command: :toggle_disco, result: {:ok, {:light, :disco, true}}, id: id}}
+
+      assert is_integer(id)
+    end
+
+    test "a refused request is fed back at once", %{opts: opts} do
+      for reason <- [:not_awake, :hardware_unavailable, :busy] do
+        hardware = fn _command -> {:error, reason} end
+
+        assert Commands.dispatch(:brightness_up, [hardware: hardware] ++ opts) == {:error, reason}
+        assert_receive {:command_feedback, %{command: :brightness_up, result: {:error, ^reason}}}
+      end
+    end
+
+    test "they need no AirPlay session and never reach the remote control", %{opts: opts} do
+      hardware = fn _command -> {:ok, :accepted} end
+      assert Commands.dispatch(:brightness_down, [hardware: hardware] ++ opts) == {:ok, :accepted}
+      refute_receive {:remote_control, _command}, 20
+    end
+
+    test "an outcome is reported even when the playback server is away", %{opts: opts} do
+      opts = Keyword.put(opts, :playback, :no_such_playback_server)
+
+      assert Commands.report(:brightness_up, {:ok, {:brightness, 55}}, opts) ==
+               {:ok, {:brightness, 55}}
+
+      assert_receive {:command_feedback,
+                      %{result: {:ok, {:brightness, 55}}, playback_status: :stopped}}
+    end
+  end
 end

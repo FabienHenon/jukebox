@@ -9,6 +9,8 @@ defmodule Jukebox.IntegrationsTest do
     assert Jukebox.RemoteControls.Demo in ids
     assert Jukebox.MetadataSources.Demo in ids
     assert Jukebox.Inputs.Fake in ids
+    # The physical controls come last, after everything they use.
+    assert List.last(ids) == Jukebox.Hardware.Supervisor
   end
 
   test "process-less remote controls are not supervised and the noop input starts nothing" do

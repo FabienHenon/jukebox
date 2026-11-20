@@ -1,0 +1,57 @@
+# systemd unit of the jukebox power controller (root): Power button on GPIO3,
+# amplifier and light outputs, display sleep, clean shutdown.
+#
+# Installed by ops/hardware/install-power-controller.sh as
+# /etc/systemd/system/jukebox-power-controller.service. Do not edit the
+# installed copy: change this file and run the installer again.
+#
+# It has no dependency on jukebox.service, on Chromium or on the network: the
+# Power button must work when any of them is down. It only waits, for a
+# bounded time, for the application's port before switching the outputs on at
+# boot (--ready-port / --ready-timeout below).
+
+[Unit]
+Description=Jukebox power controller (Power button, amplifier and light GPIO)
+Documentation=file:/home/jukebox/src/jukebox-app/docs/physical-controls.md
+DefaultDependencies=yes
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/python3 -u /usr/local/sbin/jukebox-power-controller.py --daemon \
+    --group jukebox \
+    --socket-dir-owner jukebox \
+    --display :0 \
+    --xauthority /home/jukebox/.Xauthority \
+    --ready-port 4000 \
+    --ready-timeout 90
+# The main loop reports to systemd at least once per second. If it ever stops
+# doing so the service is restarted, and its outputs are low meanwhile.
+WatchdogSec=10
+Restart=always
+RestartSec=2
+TimeoutStartSec=30
+TimeoutStopSec=10
+KillSignal=SIGTERM
+SyslogIdentifier=jukebox-power
+
+# State published for the application: /run/jukebox-power (RAM, never the SD
+# card). The service sets its group and mode itself (root:jukebox, 0750).
+RuntimeDirectory=jukebox-power
+RuntimeDirectoryMode=0750
+
+# The command socket stays at its historical place, /run/jukebox, which also
+# holds the audio analyser's socket and is NOT managed by this unit.
+
+# The GPIO library keeps small notification files in the working directory:
+# they go to RAM as well.
+WorkingDirectory=/run/jukebox-power
+
+# Deliberately few restrictions: the service needs the GPIO character device,
+# the X socket and authority file of the kiosk session, and `systemctl
+# poweroff`, and none of this could be tried under a stricter sandbox before
+# being run on the Raspberry Pi. It reads the kiosk user's home, never writes it.
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

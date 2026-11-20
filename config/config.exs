@@ -59,6 +59,17 @@ config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, []}
 config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
 config :jukebox, :input, {Jukebox.Inputs.Noop, []}
 
+# Physical controls (docs/physical-controls.md): buttons on a USB encoder,
+# software dimming of the X11 output (xrandr), lights behind the power
+# controller. `env` holds the raw JUKEBOX_BUTTON*/BRIGHTNESS*/XRANDR*/X11*/
+# POWER*/STRIP*/WLED* strings; they are parsed by Jukebox.Hardware.Config when
+# the hardware supervisor starts. Empty means the safe defaults: buttons and
+# brightness disabled. `power` is where the power mode is read from
+# (:controller, the state file of the root power controller, or :simulated)
+# and `allow_simulated` permits JUKEBOX_BUTTONS_SOURCE=simulated and
+# JUKEBOX_BRIGHTNESS_BACKEND=simulated; the simulations are for dev and test.
+config :jukebox, Jukebox.Hardware, env: %{}, power: :controller, allow_simulated: false
+
 # In-memory artwork cache served at /artwork/:id.
 config :jukebox, Jukebox.Artwork.Store, max_bytes: 2_000_000, max_entries: 3
 

@@ -72,6 +72,8 @@ defmodule Jukebox.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
+      # HTTP client, used for the optional WLED strip control only.
+      {:req, "~> 0.5"},
       {:tortoise311, "~> 0.12"}
     ]
   end

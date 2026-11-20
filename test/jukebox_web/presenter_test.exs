@@ -289,6 +289,51 @@ defmodule JukeboxWeb.PresenterTest do
     end
   end
 
+  describe "feedback/1 for the hardware commands" do
+    defp hardware_feedback(command, result) do
+      Presenter.feedback(%{id: 7, command: command, result: result, playback_status: :stopped})
+    end
+
+    test "a light is announced in the state that was confirmed" do
+      assert %{id: 7, kind: :ok, icon: :light, label: "Disco lights on"} =
+               hardware_feedback(:toggle_disco, {:ok, {:light, :disco, true}})
+
+      assert %{kind: :ok, icon: :light, label: "Disco lights off"} =
+               hardware_feedback(:toggle_disco, {:ok, {:light, :disco, false}})
+
+      assert %{label: "LED strip on"} =
+               hardware_feedback(:toggle_strip, {:ok, {:light, :strip, true}})
+    end
+
+    test "brightness shows the value the monitor reported" do
+      assert %{kind: :ok, icon: :brightness, label: "Brightness 55%"} =
+               hardware_feedback(:brightness_up, {:ok, {:brightness, 55}})
+
+      assert %{label: "Brightness 10%"} =
+               hardware_feedback(:brightness_down, {:ok, {:brightness, 10}})
+    end
+
+    test "what could not be done or confirmed is said plainly, never shown as done" do
+      assert %{kind: :muted, icon: :info, label: "Disco lights unavailable"} =
+               hardware_feedback(:toggle_disco, {:error, :hardware_unavailable})
+
+      assert %{kind: :muted, label: "LED strip not confirmed"} =
+               hardware_feedback(:toggle_strip, {:error, :unconfirmed})
+
+      assert %{kind: :muted, label: "Brightness unavailable"} =
+               hardware_feedback(:brightness_up, {:error, :hardware_unavailable})
+
+      assert %{kind: :muted, label: "Brightness not confirmed"} =
+               hardware_feedback(:brightness_down, {:error, :unconfirmed})
+
+      assert %{kind: :muted, label: "Disco lights busy"} =
+               hardware_feedback(:toggle_disco, {:error, :busy})
+
+      assert %{kind: :muted, label: "Standby"} =
+               hardware_feedback(:toggle_disco, {:error, :not_awake})
+    end
+  end
+
   test "format_time/1" do
     assert Presenter.format_time(0) == "0:00"
     assert Presenter.format_time(65_000) == "1:05"

@@ -62,6 +62,28 @@ config :jukebox, :metadata_source, {Jukebox.MetadataSources.Demo, tick_ms: 1_000
 config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
 config :jukebox, :input, {Jukebox.Inputs.Fake, debounce_ms: 80}
 
+# Physical controls without the hardware: a pretend input device, a pretend
+# power controller (always reachable, awake at start) and a pretend display.
+# The simulator page drives them. The key codes below are arbitrary; they are
+# NOT the codes of the real encoder, which are only known once measured on the
+# Raspberry Pi (docs/physical-controls.md).
+config :jukebox, Jukebox.Hardware,
+  power: :simulated,
+  allow_simulated: true,
+  env: %{
+    "JUKEBOX_BUTTONS_ENABLED" => "true",
+    "JUKEBOX_BUTTONS_SOURCE" => "simulated",
+    "JUKEBOX_BUTTON_PREVIOUS" => "704",
+    "JUKEBOX_BUTTON_PLAY_PAUSE" => "705",
+    "JUKEBOX_BUTTON_NEXT" => "706",
+    "JUKEBOX_BUTTON_DISCO_TOGGLE" => "707",
+    "JUKEBOX_BUTTON_STRIP_TOGGLE" => "708",
+    "JUKEBOX_BUTTON_ANIMATION_NEXT" => "709",
+    "JUKEBOX_BUTTON_BRIGHTNESS_DOWN" => "710",
+    "JUKEBOX_BUTTON_BRIGHTNESS_UP" => "711",
+    "JUKEBOX_BRIGHTNESS_BACKEND" => "simulated"
+  }
+
 # A fake analyser, so the audio-reactive animation can be worked on without
 # ALSA. The simulator page switches it between its profiles.
 config :jukebox, :audio_source, {Jukebox.AudioAnalysis.SimulatedSource, []}

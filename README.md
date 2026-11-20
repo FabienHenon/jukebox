@@ -65,10 +65,11 @@ Jukebox.MetadataSources.ShairportMqtt   (adapter; Demo in dev/test)
 Jukebox.Playback.Server ──── Phoenix PubSub ────► JukeboxWeb.JukeboxLive (kiosk)
         ▲                                                 │ command feedback
         │ state                                           ▼
-Jukebox.Commands ◄──── Jukebox.Inputs.* (GPIO later, Fake now, dev keys)
-        │
-        ▼
-Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport Sync ──► iPhone
+Jukebox.Commands ◄──── Jukebox.Hardware.Buttons ◄── Jukebox.Inputs.Evdev ◄── USB button encoder
+        │              (also: Jukebox.Inputs.Fake, development keys)
+        ├──► Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport Sync ──► iPhone
+        ├──► Jukebox.Animation (animation style)
+        └──► Jukebox.Hardware.{Lights, Brightness} ──► power controller / WLED / X11 output (xrandr)
 ```
 
 ### Modules
@@ -85,7 +86,10 @@ Jukebox.RemoteControls.Shairport ──► MQTT remote topic ──► Shairport
 | `Jukebox.RemoteControl` / `Jukebox.RemoteControls.{Demo, Shairport}` | Remote-control capability boundary. |
 | `Jukebox.Commands` | Semantic command service: checks the state, calls the adapter safely, broadcasts feedback. |
 | `Jukebox.Animation` | Owner of the animation style (`:calm`, `:waves`, `:chase`, `:party`) that the animation button cycles through; broadcasts changes. |
-| `Jukebox.Input`, `Jukebox.Input.Debounce`, `Jukebox.Inputs.{Noop, Fake}` | Physical-input boundary, per-command debouncing, and the two shipped adapters. |
+| `Jukebox.Input`, `Jukebox.Input.Debounce`, `Jukebox.Inputs.{Noop, Fake}` | Semantic input boundary for development and tests, per-command debouncing, and its two adapters. |
+| `Jukebox.Inputs.{Evdev, Simulated}`, `priv/hardware/xinmo_evdev.py` | The physical buttons' input adapters: one Linux input device read by a small Python helper run as a port, or raw key events injected by hand. |
+| `Jukebox.Hardware`, `Jukebox.Hardware.{Config, Supervisor, Buttons, Lights, Brightness, Lane, Exec, Wled}`, `Jukebox.Hardware.Brightness.{Desired, Xrandr}`, `Jukebox.Hardware.Power.{Monitor, StateFile, Client}` | The physical controls ([docs/physical-controls.md](docs/physical-controls.md)): environment parsing that never raises, the button dispatcher (debounce, mapping, standby rule), lights through the power controller or WLED, software dimming of the X11 output with `xrandr` (the chosen value held in memory, applied when awake and X11 is ready, verified by read-back), bounded queues, a process runner with real deadlines, and the reader of the power controller's state. `Jukebox.Hardware.status/0` is the diagnostic entry point. |
+| `ops/hardware/jukebox-power-controller.py` | The root power controller (Power button on GPIO3, amplifier and light outputs, display sleep, shutdown) and its client. A separate systemd service, independent of Phoenix. |
 | `Jukebox.AudioAnalysis`, `Jukebox.AudioAnalysis.Frame`, `Jukebox.AudioAnalysis.Source` / `Jukebox.AudioAnalysis.{NativeSource, SimulatedSource, DisabledSource}` | Audio-analysis boundary: validated frames (loudness, bass, attacks, beats, tempo, confidence) published on PubSub, from the native analyser's Unix socket, from a deterministic simulation, or not at all. |
 | `native/jukebox_audio_analyzer` | The native analyser (C, aubio): reads the PCM that Shairport Sync plays, through an ALSA tap, and sends the frames. Not part of the release; built on the Pi. |
 | `Jukebox.Integrations` | Supervisor for the adapters, started after the endpoint. |
@@ -244,6 +248,11 @@ scaled live preview of the kiosk at 1920×1080, 1280×720 and 1024×600:
 - press the fake physical buttons (Previous, Play / Pause, Next and the
   animation-style button, with the current style highlighted next to it) and
   inspect the last semantic commands and the full playback state;
+- press the eight keys of a pretend button encoder, which go through the real
+  dispatcher (debounce, mapping, standby rule), switch a pretend power
+  controller between awake, standby and absent, take a pretend X server down
+  or through a restart, and read the hardware status (lights and software
+  dimming as confirmed, input device, counters);
 - drive the simulated audio analyser: a clear beat at five tempos, free tempo
   (beats below the confidence threshold), silence, or no analyser at all, to
   see each fallback of the audio-reactive animation.
@@ -267,12 +276,29 @@ JUKEBOX_STATE_DIR=/var/lib/jukebox
 AUDIO_REACTIVE_ENABLED=false  AUDIO_REACTIVE_SOURCE=native|simulated|disabled
 AUDIO_ANALYSIS_SOCKET=/run/jukebox/audio-analysis.sock  AUDIO_ANALYSIS_PUBLISH_RATE=20
 AUDIO_VISUAL_DELAY_MS=120  AUDIO_BEAT_CONFIDENCE_THRESHOLD=0.45
+JUKEBOX_BUTTONS_ENABLED=false  JUKEBOX_BUTTONS_SOURCE=evdev  JUKEBOX_BUTTONS_DEVICE=
+JUKEBOX_BUTTONS_DEBOUNCE_MS=80  JUKEBOX_BUTTONS_DEBUG=false
+JUKEBOX_BUTTON_PREVIOUS=  _PLAY_PAUSE=  _NEXT=  _DISCO_TOGGLE=  _STRIP_TOGGLE=
+JUKEBOX_BUTTON_ANIMATION_NEXT=  _BRIGHTNESS_DOWN=  _BRIGHTNESS_UP=
+JUKEBOX_BRIGHTNESS_BACKEND=xrandr|disabled  JUKEBOX_XRANDR_OUTPUT=HDMI-1
+JUKEBOX_X11_DISPLAY=:0  JUKEBOX_X11_XAUTHORITY=/home/jukebox/.Xauthority
+JUKEBOX_BRIGHTNESS_MIN=0.3  JUKEBOX_BRIGHTNESS_MAX=1.0  JUKEBOX_BRIGHTNESS_STEP=0.1
+JUKEBOX_BRIGHTNESS_DEFAULT=1.0  JUKEBOX_BRIGHTNESS_TIMEOUT_MS=3000
+JUKEBOX_POWER_CLIENT=/usr/local/sbin/jukebox-power-controller.py
+JUKEBOX_POWER_STATE_FILE=/run/jukebox-power/state.json
+JUKEBOX_STRIP_CONTROL=power|wled  JUKEBOX_WLED_URL=
 ```
 
 Development uses the simulated audio source; production has audio analysis
 off until `AUDIO_REACTIVE_ENABLED=true`.
 
-Invalid local values fail fast at boot; unreachable services do not.
+Invalid local values fail fast at boot; unreachable services do not. The
+physical controls (the last block above) are optional hardware: the buttons
+are off by default, and a wrong value there disables the buttons, the
+brightness or the strip control with a logged explanation, and never stops the
+display or the music. Brightness is X11 software dimming (`xrandr`), not the
+monitor's backlight.
+See [docs/physical-controls.md](docs/physical-controls.md).
 
 ## Raspberry Pi deployment
 
@@ -287,6 +313,9 @@ See [docs/raspberry-pi.md](docs/raspberry-pi.md) and the templates under
 - `ops/audio/` – audio-reactive animation: the ALSA `jukebox_tap` device, the
   socket directory rule, and the install and rollback scripts
   ([docs/audio-reactive-setup.md](docs/audio-reactive-setup.md))
+- `ops/hardware/` – the power controller, its systemd unit and its installer
+  (with rollback); buttons, brightness and lights are commissioned with
+  [docs/physical-controls.md](docs/physical-controls.md)
 
 ## Project layout
 
@@ -298,6 +327,8 @@ assets/js/hooks/        progress interpolation, artwork palette, beat-driven and
 assets/js/audio/        the audio-reactive controller (pure, tested with node --test in assets/test/)
 native/                 the native audio analyser (C), its tests and the ALSA tap wrapper
 priv/static/images/     original abstract demo covers and fallback artwork
+priv/hardware/          the evdev input helper, shipped inside the release
 ops/, docs/             Raspberry Pi templates and documentation
-test/                   reducer, server, decoder, commands, inputs, store, LiveView tests
+test/                   reducer, server, decoder, commands, inputs, hardware, store, LiveView tests
+test/hardware/          Python tests of the power controller and the input helper (run by mix test)
 ```

@@ -164,7 +164,35 @@ if config_env() == :prod do
       config :jukebox, :remote_control, {Jukebox.RemoteControls.Demo, []}
   end
 
-  # Physical buttons: the no-op adapter until a GPIO implementation is wired
-  # in. See docs/raspberry-pi.md for the expected pin mapping and boundary.
+  # The semantic test input is never used in production.
   config :jukebox, :input, {Jukebox.Inputs.Noop, []}
+
+  # Physical controls (docs/physical-controls.md). The variables are only
+  # collected here, as strings. Jukebox.Hardware.Config parses them when the
+  # hardware supervisor starts and, unlike everything above, never raises: a
+  # wrong value disables the buttons, the brightness or the strip control with
+  # a logged explanation, and the display and the music carry on.
+  hardware_prefixes = [
+    "JUKEBOX_BUTTONS_",
+    "JUKEBOX_BUTTON_",
+    "JUKEBOX_BRIGHTNESS_",
+    "JUKEBOX_XRANDR_",
+    "JUKEBOX_X11_",
+    # Obsolete (the former DDC backend): only read to say that it is ignored.
+    "JUKEBOX_DDC_",
+    "JUKEBOX_POWER_",
+    "JUKEBOX_STRIP_",
+    "JUKEBOX_WLED_"
+  ]
+
+  hardware_env =
+    for {name, value} <- System.get_env(),
+        String.starts_with?(name, hardware_prefixes),
+        into: %{},
+        do: {name, value}
+
+  config :jukebox, Jukebox.Hardware,
+    env: hardware_env,
+    power: :controller,
+    allow_simulated: false
 end
